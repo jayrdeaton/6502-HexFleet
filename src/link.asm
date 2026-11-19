@@ -489,24 +489,63 @@ LinkPoll:
   cpx #FRAME_SIZE
   bne @count
   stz PARSE_N
+  jsr FrameOk
+  bcc @damaged
   jsr TakeFrame
+  bra @count
+@damaged:
+  jsr Resync
 @count:
   dec LINK_N
   bne @next
 @done:
   rts
 
-; TakeFrame - check a whole frame and act on it.
-TakeFrame:
+; FrameOk - carry set if the frame that just came in passes its check.
+FrameOk:
   lda #<FRAME
   ldx #>FRAME
   jsr FrameCheck
   lda CK_A
   cmp FRAME + FRAME_SIZE - 2
-  bne @done
+  bne @bad
   lda CK_B
   cmp FRAME + FRAME_SIZE - 1
-  bne @done
+  bne @bad
+  sec
+  rts
+@bad:
+  clc
+  rts
+
+; Resync - a frame that failed its check starts again from the next sync byte
+; inside it. After a lost byte that's the start of the frame behind it, which
+; would otherwise be lost as well. A sync byte that turns out to be data fails
+; its check in turn and the search moves on.
+Resync:
+  ldx #1
+@find:
+  lda FRAME,x
+  cmp #FRAME_SYNC
+  beq @found
+  inx
+  cpx #FRAME_SIZE
+  bne @find
+  rts                              ; none: wait for the next one
+@found:
+  ldy #0
+@move:
+  lda FRAME,x
+  sta FRAME,y
+  iny
+  inx
+  cpx #FRAME_SIZE
+  bne @move
+  sty PARSE_N
+  rts
+
+; TakeFrame - act on a frame that passed its check.
+TakeFrame:
   lda FRAME+1
   cmp #FR_HELLO
   beq TakeHello

@@ -12960,170 +12960,209 @@ Current file: HexFleet.asm
 001991r 2               ; LinkPoll - take what has arrived, a limited amount a frame.
 001991r 2               LinkPoll:
 001991r 2  AD 04 0E       lda LINK_ON
-001994r 2  F0 32          beq @done
+001994r 2  F0 3C          beq @done
 001996r 2  A9 28          lda #POLL_BYTES
 001998r 2  8D 11 0E       sta LINK_N
 00199Br 2               @next:
 00199Br 2  AE 01 0E       ldx RX_TAIL
 00199Er 2  EC 00 0E       cpx RX_HEAD
-0019A1r 2  F0 25          beq @done
+0019A1r 2  F0 2F          beq @done
 0019A3r 2  BD 00 0D       lda RX_BUF,x
 0019A6r 2  EE 01 0E       inc RX_TAIL
 0019A9r 2  AE 12 0E       ldx PARSE_N
 0019ACr 2  D0 04          bne @inFrame
 0019AEr 2  C9 A5          cmp #FRAME_SYNC
-0019B0r 2  D0 11          bne @count
+0019B0r 2  D0 1B          bne @count
 0019B2r 2               @inFrame:
 0019B2r 2  9D 20 0E       sta FRAME,x
 0019B5r 2  E8             inx
 0019B6r 2  8E 12 0E       stx PARSE_N
 0019B9r 2  E0 0B          cpx #FRAME_SIZE
-0019BBr 2  D0 06          bne @count
+0019BBr 2  D0 10          bne @count
 0019BDr 2  9C 12 0E       stz PARSE_N
-0019C0r 2  20 rr rr       jsr TakeFrame
-0019C3r 2               @count:
-0019C3r 2  CE 11 0E       dec LINK_N
-0019C6r 2  D0 D3          bne @next
-0019C8r 2               @done:
-0019C8r 2  60             rts
-0019C9r 2               
-0019C9r 2               ; TakeFrame - check a whole frame and act on it.
-0019C9r 2               TakeFrame:
-0019C9r 2  A9 20          lda #<FRAME
-0019CBr 2  A2 0E          ldx #>FRAME
-0019CDr 2  20 rr rr       jsr FrameCheck
-0019D0r 2  AD 1D 0E       lda CK_A
-0019D3r 2  CD 29 0E       cmp FRAME + FRAME_SIZE - 2
-0019D6r 2  D0 23          bne @done
-0019D8r 2  AD 1E 0E       lda CK_B
-0019DBr 2  CD 2A 0E       cmp FRAME + FRAME_SIZE - 1
-0019DEr 2  D0 1B          bne @done
-0019E0r 2  AD 21 0E       lda FRAME+1
-0019E3r 2  C9 01          cmp #FR_HELLO
-0019E5r 2  F0 69          beq TakeHello
-0019E7r 2  C9 02          cmp #FR_PLAN
-0019E9r 2  F0 11          beq TakePlan
-0019EBr 2  C9 03          cmp #FR_ACK
-0019EDr 2  D0 0C          bne @done
-0019EFr 2  AD 22 0E       lda FRAME+2
-0019F2r 2  C5 73          cmp TURN
-0019F4r 2  D0 05          bne @done
-0019F6r 2  A9 01          lda #1
-0019F8r 2  8D 16 0E       sta PEER_ACK
-0019FBr 2               @done:
-0019FBr 2  60             rts
-0019FCr 2               
-0019FCr 2               TakePlan:
-0019FCr 2  AD 13 0E       lda LINK_UP
-0019FFr 2  F0 0C          beq @done
-001A01r 2  AD 22 0E       lda FRAME+2
-001A04r 2  C5 73          cmp TURN
-001A06r 2  F0 06          beq @now
-001A08r 2  1A             inc a                            ; last turn's, when our answer got lost
-001A09r 2  C5 73          cmp TURN
-001A0Br 2  F0 3D          beq @answer
-001A0Dr 2               @done:
-001A0Dr 2  60             rts
-001A0Er 2               @now:
-001A0Er 2  A5 6E          lda STATE                        ; after the battle the state has moved on
-001A10r 2  C9 04          cmp #ST_OVER
-001A12r 2  F0 36          beq @answer
-001A14r 2  20 rr rr       jsr StateSum
-001A17r 2  CD 28 0E       cmp FRAME+8
-001A1Ar 2  F0 06          beq @same
-001A1Cr 2  A9 01          lda #BAD_SYNC
-001A1Er 2  8D 14 0E       sta LINK_BAD
-001A21r 2  60             rts
-001A22r 2               @same:
-001A22r 2  AD 15 0E       lda HAVE_PLAN
-001A25r 2  D0 23          bne @answer
-001A27r 2  A2 04          ldx #4
-001A29r 2               @copy:
-001A29r 2  BD 23 0E       lda FRAME+3,x
-001A2Cr 2  9D 17 0E       sta PEER_PLAN,x
-001A2Fr 2  CA             dex
-001A30r 2  10 F7          bpl @copy
-001A32r 2  A9 01          lda #1
-001A34r 2  8D 15 0E       sta HAVE_PLAN
-001A37r 2  A5 6E          lda STATE
-001A39r 2  C9 02          cmp #ST_PLAN
-001A3Br 2  D0 0D          bne @answer
-001A3Dr 2  A9 03          lda #INK_GRAY
-001A3Fr 2  85 78          sta TXT_INK
-001A41r 2  A9 0C          lda #ROW_READY
-001A43r 2  A2 rr          ldx #<TxtOtherReady
-001A45r 2  A0 rr          ldy #>TxtOtherReady
-001A47r 2  20 rr rr       jsr Print
-001A4Ar 2               @answer:
-001A4Ar 2  AD 22 0E       lda FRAME+2
-001A4Dr 2  4C rr rr       jmp SendAck
-001A50r 2               
-001A50r 2               TakeHello:
-001A50r 2  AD 27 0E       lda FRAME+7
-001A53r 2  C9 01          cmp #LINK_VERSION
-001A55r 2  F0 06          beq @version
-001A57r 2  A9 02          lda #BAD_VERSION
-001A59r 2  8D 14 0E       sta LINK_BAD
-001A5Cr 2  60             rts
-001A5Dr 2               @version:
-001A5Dr 2  AD 13 0E       lda LINK_UP
-001A60r 2  F0 1A          beq @looking
-001A62r 2                 ; already playing: it may not know yet
-001A62r 2  AD 23 0E       lda FRAME+3
-001A65r 2  CD 0B 0E       cmp PEER_NONCE
-001A68r 2  D0 4E          bne @done
-001A6Ar 2  AD 24 0E       lda FRAME+4
-001A6Dr 2  CD 0C 0E       cmp PEER_NONCE+1
-001A70r 2  D0 46          bne @done
-001A72r 2  AD 26 0E       lda FRAME+6
-001A75r 2  C9 02          cmp #2
-001A77r 2  B0 3F          bcs @done
-001A79r 2  4C rr rr       jmp SendHello
-001A7Cr 2               @looking:
-001A7Cr 2  AD 23 0E       lda FRAME+3
-001A7Fr 2  CD 09 0E       cmp MY_NONCE
-001A82r 2  D0 11          bne @other
-001A84r 2  AD 24 0E       lda FRAME+4
-001A87r 2  CD 0A 0E       cmp MY_NONCE+1
-001A8Ar 2  D0 09          bne @other
-001A8Cr 2  9C 0E 0E       stz HAVE_HELLO                   ; the same number: both pick again
-001A8Fr 2  9C 0F 0E       stz PEER_HAS
-001A92r 2  4C rr rr       jmp NewNonce
-001A95r 2               @other:
-001A95r 2  AD 23 0E       lda FRAME+3
-001A98r 2  8D 0B 0E       sta PEER_NONCE
-001A9Br 2  AD 24 0E       lda FRAME+4
-001A9Er 2  8D 0C 0E       sta PEER_NONCE+1
-001AA1r 2  AD 25 0E       lda FRAME+5
-001AA4r 2  29 03          and #3
-001AA6r 2  8D 0D 0E       sta PEER_FACTION
-001AA9r 2  A9 01          lda #1
-001AABr 2  8D 0E 0E       sta HAVE_HELLO
-001AAEr 2  AD 26 0E       lda FRAME+6
-001AB1r 2  F0 06          beq @answer
-001AB3r 2  A9 01          lda #1
-001AB5r 2  8D 0F 0E       sta PEER_HAS
-001AB8r 2               @done:
-001AB8r 2  60             rts
-001AB9r 2               @answer:
-001AB9r 2  4C rr rr       jmp SendHello
-001ABCr 2               
-001ABCr 1               .include "src/sound.asm"
-001ABCr 2               ; =============================================================================
-001ABCr 2               ;   sound.asm - sound effects and music on the SID
-001ABCr 2               ; =============================================================================
-001ABCr 2               ;   The HexFleet app's sounds and music, rebuilt for the SID's three voices
-001ABCr 2               ;   (tools/build-sound.mjs holds them). Music plays on all three. An effect takes
-001ABCr 2               ;   over voice 3, or voice 2 when it needs a second voice or 3 is busy with
-001ABCr 2               ;   something that matters more, and the music picks the voice up again at its
-001ABCr 2               ;   next note.
-001ABCr 2               ;
-001ABCr 2               ;   A timer interrupt runs SoundTick 60 times a second from bank 3, so the sound
-001ABCr 2               ;   keeps time however busy the game is. The game only leaves requests in a queue.
-001ABCr 2               ;   This fixed-bank half holds those calls and the interrupt handler.
-001ABCr 2               ; =============================================================================
-001ABCr 2               
-001ABCr 2               .segment "CART"
+0019C0r 2  20 rr rr       jsr FrameOk
+0019C3r 2  90 05          bcc @damaged
+0019C5r 2  20 rr rr       jsr TakeFrame
+0019C8r 2  80 03          bra @count
+0019CAr 2               @damaged:
+0019CAr 2  20 rr rr       jsr Resync
+0019CDr 2               @count:
+0019CDr 2  CE 11 0E       dec LINK_N
+0019D0r 2  D0 C9          bne @next
+0019D2r 2               @done:
+0019D2r 2  60             rts
+0019D3r 2               
+0019D3r 2               ; FrameOk - carry set if the frame that just came in passes its check.
+0019D3r 2               FrameOk:
+0019D3r 2  A9 20          lda #<FRAME
+0019D5r 2  A2 0E          ldx #>FRAME
+0019D7r 2  20 rr rr       jsr FrameCheck
+0019DAr 2  AD 1D 0E       lda CK_A
+0019DDr 2  CD 29 0E       cmp FRAME + FRAME_SIZE - 2
+0019E0r 2  D0 0A          bne @bad
+0019E2r 2  AD 1E 0E       lda CK_B
+0019E5r 2  CD 2A 0E       cmp FRAME + FRAME_SIZE - 1
+0019E8r 2  D0 02          bne @bad
+0019EAr 2  38             sec
+0019EBr 2  60             rts
+0019ECr 2               @bad:
+0019ECr 2  18             clc
+0019EDr 2  60             rts
+0019EEr 2               
+0019EEr 2               ; Resync - a frame that failed its check starts again from the next sync byte
+0019EEr 2               ; inside it. After a lost byte that's the start of the frame behind it, which
+0019EEr 2               ; would otherwise be lost as well. A sync byte that turns out to be data fails
+0019EEr 2               ; its check in turn and the search moves on.
+0019EEr 2               Resync:
+0019EEr 2  A2 01          ldx #1
+0019F0r 2               @find:
+0019F0r 2  BD 20 0E       lda FRAME,x
+0019F3r 2  C9 A5          cmp #FRAME_SYNC
+0019F5r 2  F0 06          beq @found
+0019F7r 2  E8             inx
+0019F8r 2  E0 0B          cpx #FRAME_SIZE
+0019FAr 2  D0 F4          bne @find
+0019FCr 2  60             rts                              ; none: wait for the next one
+0019FDr 2               @found:
+0019FDr 2  A0 00          ldy #0
+0019FFr 2               @move:
+0019FFr 2  BD 20 0E       lda FRAME,x
+001A02r 2  99 20 0E       sta FRAME,y
+001A05r 2  C8             iny
+001A06r 2  E8             inx
+001A07r 2  E0 0B          cpx #FRAME_SIZE
+001A09r 2  D0 F4          bne @move
+001A0Br 2  8C 12 0E       sty PARSE_N
+001A0Er 2  60             rts
+001A0Fr 2               
+001A0Fr 2               ; TakeFrame - act on a frame that passed its check.
+001A0Fr 2               TakeFrame:
+001A0Fr 2  AD 21 0E       lda FRAME+1
+001A12r 2  C9 01          cmp #FR_HELLO
+001A14r 2  F0 69          beq TakeHello
+001A16r 2  C9 02          cmp #FR_PLAN
+001A18r 2  F0 11          beq TakePlan
+001A1Ar 2  C9 03          cmp #FR_ACK
+001A1Cr 2  D0 0C          bne @done
+001A1Er 2  AD 22 0E       lda FRAME+2
+001A21r 2  C5 73          cmp TURN
+001A23r 2  D0 05          bne @done
+001A25r 2  A9 01          lda #1
+001A27r 2  8D 16 0E       sta PEER_ACK
+001A2Ar 2               @done:
+001A2Ar 2  60             rts
+001A2Br 2               
+001A2Br 2               TakePlan:
+001A2Br 2  AD 13 0E       lda LINK_UP
+001A2Er 2  F0 0C          beq @done
+001A30r 2  AD 22 0E       lda FRAME+2
+001A33r 2  C5 73          cmp TURN
+001A35r 2  F0 06          beq @now
+001A37r 2  1A             inc a                            ; last turn's, when our answer got lost
+001A38r 2  C5 73          cmp TURN
+001A3Ar 2  F0 3D          beq @answer
+001A3Cr 2               @done:
+001A3Cr 2  60             rts
+001A3Dr 2               @now:
+001A3Dr 2  A5 6E          lda STATE                        ; after the battle the state has moved on
+001A3Fr 2  C9 04          cmp #ST_OVER
+001A41r 2  F0 36          beq @answer
+001A43r 2  20 rr rr       jsr StateSum
+001A46r 2  CD 28 0E       cmp FRAME+8
+001A49r 2  F0 06          beq @same
+001A4Br 2  A9 01          lda #BAD_SYNC
+001A4Dr 2  8D 14 0E       sta LINK_BAD
+001A50r 2  60             rts
+001A51r 2               @same:
+001A51r 2  AD 15 0E       lda HAVE_PLAN
+001A54r 2  D0 23          bne @answer
+001A56r 2  A2 04          ldx #4
+001A58r 2               @copy:
+001A58r 2  BD 23 0E       lda FRAME+3,x
+001A5Br 2  9D 17 0E       sta PEER_PLAN,x
+001A5Er 2  CA             dex
+001A5Fr 2  10 F7          bpl @copy
+001A61r 2  A9 01          lda #1
+001A63r 2  8D 15 0E       sta HAVE_PLAN
+001A66r 2  A5 6E          lda STATE
+001A68r 2  C9 02          cmp #ST_PLAN
+001A6Ar 2  D0 0D          bne @answer
+001A6Cr 2  A9 03          lda #INK_GRAY
+001A6Er 2  85 78          sta TXT_INK
+001A70r 2  A9 0C          lda #ROW_READY
+001A72r 2  A2 rr          ldx #<TxtOtherReady
+001A74r 2  A0 rr          ldy #>TxtOtherReady
+001A76r 2  20 rr rr       jsr Print
+001A79r 2               @answer:
+001A79r 2  AD 22 0E       lda FRAME+2
+001A7Cr 2  4C rr rr       jmp SendAck
+001A7Fr 2               
+001A7Fr 2               TakeHello:
+001A7Fr 2  AD 27 0E       lda FRAME+7
+001A82r 2  C9 01          cmp #LINK_VERSION
+001A84r 2  F0 06          beq @version
+001A86r 2  A9 02          lda #BAD_VERSION
+001A88r 2  8D 14 0E       sta LINK_BAD
+001A8Br 2  60             rts
+001A8Cr 2               @version:
+001A8Cr 2  AD 13 0E       lda LINK_UP
+001A8Fr 2  F0 1A          beq @looking
+001A91r 2                 ; already playing: it may not know yet
+001A91r 2  AD 23 0E       lda FRAME+3
+001A94r 2  CD 0B 0E       cmp PEER_NONCE
+001A97r 2  D0 4E          bne @done
+001A99r 2  AD 24 0E       lda FRAME+4
+001A9Cr 2  CD 0C 0E       cmp PEER_NONCE+1
+001A9Fr 2  D0 46          bne @done
+001AA1r 2  AD 26 0E       lda FRAME+6
+001AA4r 2  C9 02          cmp #2
+001AA6r 2  B0 3F          bcs @done
+001AA8r 2  4C rr rr       jmp SendHello
+001AABr 2               @looking:
+001AABr 2  AD 23 0E       lda FRAME+3
+001AAEr 2  CD 09 0E       cmp MY_NONCE
+001AB1r 2  D0 11          bne @other
+001AB3r 2  AD 24 0E       lda FRAME+4
+001AB6r 2  CD 0A 0E       cmp MY_NONCE+1
+001AB9r 2  D0 09          bne @other
+001ABBr 2  9C 0E 0E       stz HAVE_HELLO                   ; the same number: both pick again
+001ABEr 2  9C 0F 0E       stz PEER_HAS
+001AC1r 2  4C rr rr       jmp NewNonce
+001AC4r 2               @other:
+001AC4r 2  AD 23 0E       lda FRAME+3
+001AC7r 2  8D 0B 0E       sta PEER_NONCE
+001ACAr 2  AD 24 0E       lda FRAME+4
+001ACDr 2  8D 0C 0E       sta PEER_NONCE+1
+001AD0r 2  AD 25 0E       lda FRAME+5
+001AD3r 2  29 03          and #3
+001AD5r 2  8D 0D 0E       sta PEER_FACTION
+001AD8r 2  A9 01          lda #1
+001ADAr 2  8D 0E 0E       sta HAVE_HELLO
+001ADDr 2  AD 26 0E       lda FRAME+6
+001AE0r 2  F0 06          beq @answer
+001AE2r 2  A9 01          lda #1
+001AE4r 2  8D 0F 0E       sta PEER_HAS
+001AE7r 2               @done:
+001AE7r 2  60             rts
+001AE8r 2               @answer:
+001AE8r 2  4C rr rr       jmp SendHello
+001AEBr 2               
+001AEBr 1               .include "src/sound.asm"
+001AEBr 2               ; =============================================================================
+001AEBr 2               ;   sound.asm - sound effects and music on the SID
+001AEBr 2               ; =============================================================================
+001AEBr 2               ;   The HexFleet app's sounds and music, rebuilt for the SID's three voices
+001AEBr 2               ;   (tools/build-sound.mjs holds them). Music plays on all three. An effect takes
+001AEBr 2               ;   over voice 3, or voice 2 when it needs a second voice or 3 is busy with
+001AEBr 2               ;   something that matters more, and the music picks the voice up again at its
+001AEBr 2               ;   next note.
+001AEBr 2               ;
+001AEBr 2               ;   A timer interrupt runs SoundTick 60 times a second from bank 3, so the sound
+001AEBr 2               ;   keeps time however busy the game is. The game only leaves requests in a queue.
+001AEBr 2               ;   This fixed-bank half holds those calls and the interrupt handler.
+001AEBr 2               ; =============================================================================
+001AEBr 2               
+001AEBr 2               .segment "CART"
 001A27r 2               
 001A27r 2               TIMER_FRAME   = 16600              ; a 60th of a second, less the time to restart it
 001A27r 2               REQ_LASER_OFF = $F0
