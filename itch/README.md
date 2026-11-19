@@ -1,8 +1,8 @@
 # itch.io page
 
-The settings and text for HexFleet's page on itch.io, on Jay's own account (Aaron's games go on his account, and games they make together on infinitetoken.itch.io). The page offers the cartridge as a download, and its description links to the version that plays in a browser at games.infinitetoken.com.
+HexFleet's page on itch.io, https://jayrdeaton.itch.io/hexfleet, public since 2026-11-19 on Jay's own account (Aaron's games go on his account, and games they make together on infinitetoken.itch.io). The page offers the cartridge as a download, and its description links to the version that plays in a browser at games.infinitetoken.com.
 
-`description.md` is the page's Description. itch's editor is rich text, so copy it from a rendered preview (the app's file pane or GitHub) to bring its headings, bold and links along. Pasting the raw Markdown shows the `#`s and `**`s.
+`description.md` is the page's Description. itch's editor is rich text: paste the description as HTML in its source view (the `<>` button), or copy it from a rendered preview. Pasting the raw Markdown shows the `#`s and `**`s.
 
 ## Settings
 
@@ -13,17 +13,43 @@ The settings and text for HexFleet's page on itch.io, on Jay's own account (Aaro
 | Short description or tagline | Turn-based starship battles on a hex grid for the AC6502 ACE. Plan in secret, then every ship fires at once. |
 | Classification | Games |
 | Kind of project | Downloadable |
-| Release status | In development: nobody but Jay has played it, and the save and serial code hasn't run on a real ACE. Change it to Released once both have happened. |
-| Pricing | No payments to start. $0 or donate can come later, once people have played it, and taking money means itch's payout and tax setup. |
-| Uploads | `HexFleet.crt`, with the display name "HexFleet.crt (128 KB Flash Cart for the PICOVDP)". Leave the Windows, macOS, Linux and Android boxes unticked, since it's a cartridge image, not a build for any of them. |
+| Release status | Released |
+| Pricing | $0 or donate, suggesting $3 like Wizards Lab. Payouts are collected by itch.io and paid later, with the tax interview done. |
+| Uploads | `HexFleet.crt`, of type Other (not Executable: it's a cartridge image, not a build for Windows, macOS, Linux or Android), with its own name as the display name and no platform boxes ticked |
 | Description | `description.md` |
 | Genre | Strategy |
-| Tags | `6502`, `homebrew`, `retro`, `8-bit`, `turn-based-strategy`, `hex`, `space`, `sci-fi`, `local-multiplayer`, `tactical` (itch takes 10). Take itch's own spelling of each as it suggests them. |
-| Generative AI disclosure | Yes, with Code: the game's code was written with Claude. Jay decides whether Graphics and Sound apply: the hull textures and the SID music and effects come from scripts written with Claude, though no image or audio generator was used. Answering No would add the No AI tag, and itch removes projects from browse when generative AI isn't disclosed. |
-| Inputs | Keyboard, Joystick |
-| Multiplayer | Local multiplayer, 1 to 4 players |
-| Community | Comments, for bug reports and scores |
-| Visibility | Draft until the page is filled in, then Public |
+| Tags | `6502`, `homebrew`, `retro`, `8-bit`, `turn-based`, `hex-based`, `space`, `sci-fi`, `local-multiplayer`, `local-co-op` (itch takes 10). Local co-op is two people as teammates against CPUs. |
+| Generative AI disclosure | Left unanswered: itch only requires it of asset creators, and it's optional for games. Never answer No: the code was written with Claude, itch counts LLM-written code as generative AI content, and it drops pages that answer falsely from search and browse. |
+| App store links | None: the HexFleet app is a different game, and the description's More HexFleet section points to it |
+| Custom noun | Blank (game) |
+| Download & install instructions | See below |
+| Community | Comments |
+| Visibility | Public |
+| Metadata tab | Average session a few minutes, English, Keyboard and Joystick, local multiplayer, 1 to 4 players |
+
+## Download & install instructions
+
+Pasted as HTML in the field's source view:
+
+```html
+<p>Play it in the <a href="https://github.com/acwright/6502-EMULATOR">AC6502 emulator</a>, 3.0 or newer, with the video card set to PICOVDP. Load HexFleet.crt as a cartridge, or from a terminal:</p>
+<p><code>6502 run --vdp picovdp --cart HexFleet.crt</code></p>
+<p>High scores are saved to HexFleet.sav beside the cartridge. On a real ACE, it needs a 6502-PICOVDP on BIOS 2.x and a 128 KB Flash Cart.</p>
+<p>No emulator? Play it in your browser at <a href="https://games.infinitetoken.com/6502/hexfleet">games.infinitetoken.com</a>.</p>
+```
+
+## Theme
+
+The cart's own colors, read from its screenshots:
+
+| Setting | Value |
+| --- | --- |
+| BG and BG 2 | `#111122`, the board's navy, so the screenshots and cover blend into the page |
+| Text | `#c8d2de`, the game's panel gray (`#99aabb`) lightened for reading |
+| Link | `#00eeee`, the HEXFLEET wordmark's cyan |
+| Font | Lato, Large |
+| Banner | `banner.png`: the title screen's HEXFLEET wordmark at 4x on transparency, 960 x 164, centered. It takes the place of the page's title. |
+| Background | `background.png`: one 20 x 30 tile of the board's hex grid (`#224466` on the navy) at 2x, repeated both ways |
 
 ## Images
 
@@ -41,9 +67,3 @@ The settings and text for HexFleet's page on itch.io, on Jay's own account (Aaro
 ## Keeping it in step
 
 When the cartridge is rebuilt, upload the new `HexFleet.crt` here and move the cart's pinned commit in Games-Web's `src/constants/site.ts` at the same time, so the download and the browser version are the same build. A rebuilt cartridge won't load a save from an older build, and linked machines need the same build.
-
-## Before it goes public
-
-1. Make the itch account (`jayrdeaton`, display name Jay Deaton) and set its profile links to games.infinitetoken.com, jaydeaton.com and GitHub.
-2. Answer the AI disclosure.
-3. Fill in the settings above, paste the description, upload `HexFleet.crt`, `cover.png` and the screenshots, preview it as a draft, then set it to Public. A first page may wait in itch's review queue before it shows up in browse.
