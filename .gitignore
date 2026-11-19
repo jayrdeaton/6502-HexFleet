@@ -3,3 +3,4 @@
 *.sav
 tools/preview.png
 .DS_Store
+test/out/

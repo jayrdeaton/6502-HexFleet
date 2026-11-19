@@ -121,6 +121,20 @@ Everything that touches the hardware is in `src/vdp.asm`, `src/input.asm`,
 `src/sound.asm` (with the interrupt handler), the flash routines in `src/scores.asm` and the serial routines in
 `src/link.asm`, so another machine can replace those.
 
+## Testing
+
+```sh
+make test     # builds, then plays the cart headless in the emulator
+```
+
+`test/spec.mjs` plays the rules, the CPUs and the high score table through the real
+cart, and cuts the power partway through a save at a dozen points; `test/link.mjs`
+joins two emulators by a script that carries the serial bytes between them, dropping
+and damaging some on the way. Both need the [AC6502 emulator](https://github.com/acwright/6502-EMULATOR)
+3.0 or newer: set `EMULATOR` to its command line, or build a checkout at
+`~/Developer/.tooling/6502-EMULATOR` with `npm run build:cli`. Single tests run by
+name, e.g. `node test/spec.mjs torpedo cloak`. Screenshots land in `test/out`.
+
 ## License
 
 The code is released under the MIT License, see [LICENSE](LICENSE).

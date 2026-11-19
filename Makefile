@@ -1,7 +1,7 @@
 TARGET = HexFleet
 CONFIG = 6502-128K
 
-.PHONY: all build assets run clean
+.PHONY: all build assets run test clean
 
 all: build
 
@@ -17,6 +17,10 @@ assets:
 
 run: build
 	6502 run --vdp picovdp --cart $(TARGET).crt
+
+# Plays the cart headless in the emulator (see test/emulator.mjs for which one)
+test: build
+	test/run.sh
 
 clean:
 	rm -f $(TARGET).crt $(TARGET).lst $(TARGET).map *.o src/*.o
