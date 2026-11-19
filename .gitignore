@@ -1,0 +1,5 @@
+*.map
+*.o
+*.sav
+tools/preview.png
+.DS_Store
