@@ -1,9 +1,9 @@
 ; =============================================================================
 ;   scores.asm - the high score table, saved on the Flash Cart
 ; =============================================================================
-;   Winning against the CPU scores 100, plus your hull left as a percentage,
-;   plus 5 for every turn under 20. Against the Normal CPU that's worth 5 times
-;   as much, so an Easy win never outranks a Normal one. The best five are kept.
+;   One person beating the CPUs scores 100, plus their hull left as a percentage,
+;   plus 5 for every turn under 20, plus 100 for each enemy past the first. With no
+;   Easy CPU in the battle that's worth 5 times as much. The best five are kept.
 ;
 ;   The table lives in the cart's save sector, the top 4 KB of bank $0E, as a
 ;   log of 64-byte records. Each save goes in the next free record, so a power
@@ -285,23 +285,33 @@ RamWriteEnd:
 ; CheckRecord - after a battle: carry set if you beat the CPU with a score that
 ; makes the table, with NEW_SCORE and RANK set.
 CheckRecord:
-  jsr VsCpu
-  bcs @vsCpu
+  lda HUMANS
+  cmp #1
+  bne @none
+  jsr IsLink
+  beq @none
+  ldy WINNER
+  cpy #$FF
+  beq @none
+  ldx HUMAN_SEAT
+  lda SHIP_SIDE,y
+  cmp SHIP_SIDE,x
+  beq @won
 @none:
   clc
   rts
-@vsCpu:
-  lda WINNER
-  bne @none
+@won:
   ; 100, plus the hull left as a percentage
-  lda SHIP_HP_HI
+  lda SHIP_HP_HI,x
+  phx
   ldx #100
   jsr Mul8
+  plx
   lda PROD
   sta DIVIDEND
   lda PROD+1
   sta DIVIDEND+1
-  ldy SHIP_FACTION
+  ldy SHIP_FACTION,x
   lda MaxHull,y
   sta DIVISOR
   jsr Div16
@@ -326,9 +336,39 @@ CheckRecord:
   bcc @counted
   inc NEW_SCORE+1
 @counted:
-  lda OPP
+  ; plus 100 for each enemy past the first, and is any CPU an easy one?
+  stz T2
+  ldy HUMAN_SEAT
+  ldx N_SHIPS
+@seat:
+  dex
+  bmi @seats
+  lda SEAT_KIND,x
+  cmp #KIND_EASY
+  bne @notEasy
+  inc T2
+@notEasy:
+  lda SHIP_SIDE,x
+  cmp SHIP_SIDE,y
+  beq @seat
+  lda NEW_SCORE
+  clc
+  adc #100
+  sta NEW_SCORE
+  bcc @seat
+  inc NEW_SCORE+1
+  bra @seat
+@seats:
+  lda NEW_SCORE                    ; the first enemy doesn't add anything
+  sec
+  sbc #100
+  sta NEW_SCORE
+  bcs @kinds
+  dec NEW_SCORE+1
+@kinds:
+  lda T2
   bne @rank
-  ; times 5 against the Normal CPU
+  ; times 5 against Normal CPUs
   lda NEW_SCORE
   sta T0
   lda NEW_SCORE+1
@@ -398,9 +438,10 @@ InsertScore:
   sta ENTRIES + E_NAME + 1,y
   lda NAME_BUF+2
   sta ENTRIES + E_NAME + 2,y
-  lda SHIP_FACTION
+  ldx HUMAN_SEAT
+  lda SHIP_FACTION,x
   sta ENTRIES + E_FACTION,y
-  lda OPP
+  lda MODE
   sta ENTRIES + E_OPP,y
   lda TURN
   sta ENTRIES + E_TURNS,y

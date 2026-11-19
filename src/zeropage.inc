@@ -3,7 +3,7 @@
 ; =============================================================================
 
 ; --- Game ---
-NUM_SHIPS     = 2          ; ships in a battle (the arrays below hold 4)
+NUM_SHIPS     = 4          ; the most ships in a battle; N_SHIPS is how many are
 MOVE_RANGE    = 3          ; hexes a ship may move in a turn
 TICKS         = 64         ; a turn is 64 ticks; ships glide across all of them
 CHARGE_TICKS  = 16         ; a laser charges for the first quarter, then burns
@@ -32,7 +32,7 @@ RAM_RECOIL    = 20
 AREA_REACH    = 25         ; a blast catches a ship centered this near
 AREA_REACH_SQ = 625
 MINE_LIMIT    = 3          ; each
-NUM_MINES     = 6
+NUM_MINES     = 12
 NUM_FX        = 4          ; blast rings at once
 FX_STEP       = 5          ; ticks at each of a ring's three sizes
 RING_POINTS   = 32
@@ -61,13 +61,15 @@ ROW_MSG4      = 16
 ROW_MSG5      = 17
 ROW_MSG6      = 19
 ROW_MSG7      = 21
-ROW_MUSIC     = 11         ; title: the music setting
+ROW_MUSIC     = 13         ; title: the music setting
 ROW_READY     = 12         ; a linked game: the other side has locked in
-ROW_OPP       = 9          ; title: who plays the second ship
-ROW_TIP1      = 12         ; title: the selected seat's special
-ROW_TIP2      = 13
-ROW_TIP3      = 14
-ROW_SCORES    = 16         ; the high scores: a heading and 5 rows
+ROW_MODE      = 1          ; title: the kind of battle
+ROW_SEATS     = 3          ; title: a row for each seat, 3..6
+ROW_TIP0      = 8          ; title: the picked seat's ship
+ROW_TIP1      = 9         ; title: the selected seat's special
+ROW_TIP2      = 10
+ROW_TIP3      = 11
+ROW_SCORES    = 15         ; the high scores: a heading and 5 rows
 ROW_HELP1     = 22
 ROW_HELP2     = 23
 ROW_HELP3     = 25
@@ -86,10 +88,21 @@ V_POOL        = V_L1PAT + 128 * 16  ; layer 1 patterns the canvas draws in
 POOL_TILES    = 255        ; how many: patterns 128..382
 
 ; Layer 1's colors. Each is a 4-color sub-palette, number ink + 3: its value 1 is
-; the ink and value 3 the dark behind big text. Sub-palette 4 is the canvas: value 1
-; is ship 1's ink and value 2 ship 2's, so every pixel keeps its own color.
+; the ink and value 3 the dark behind big text. Sub-palettes 4 and 14 are the canvas:
+; values 1 and 2 are ships 1 and 2, and value 3 is ship 3 in one and ship 4 in the
+; other, so every pixel keeps its own color.
 CANVAS_SUB    = 4
 PAT_SOLID     = 10         ; a cell filled with value 3
+PAT_ALPHA     = 11         ; the team letters: alpha, then omega
+CANVAS_B      = 14         ; a second canvas sub-palette, for ship 4
+BAND_SUB      = 5          ; any text sub-palette: its value 3 is the dark
+M_ALL         = 0          ; MODE: everyone for themselves
+M_TEAMS       = 1
+M_LINK        = 2
+KIND_PERSON   = 0          ; who flies a seat
+KIND_CPU      = 1
+KIND_EASY     = 2
+KIND_OFF      = 3
 INK_DARK      = 1
 INK_WHITE     = 2
 INK_GRAY      = 3
@@ -100,7 +113,6 @@ INK_VIOLET    = 7
 INK_CYAN      = 8
 INK_RED       = 9
 INK_LIME      = 10
-INK_PINK      = 11
 INK_YELLOW    = 12
 
 ; Layer 1 patterns: 1..9 are hull bar cells, 0..8 pixels full; 32..127 the font
@@ -152,10 +164,11 @@ SLOT_EXPL     = 8          ; 8..11
 SLOT_CURSOR   = 12
 SLOT_DEST     = 13
 SLOT_AIM      = 14
-SLOT_MINE     = 15         ; 15..20
-SLOT_SEEN     = 21         ; 21..22
-SLOT_FX       = 23         ; 23..26
-NUM_SLOTS     = 27
+SLOT_MINE     = 15         ; 15..26
+SLOT_SEEN     = 27         ; 27..30
+SLOT_FX       = 31         ; 31..34
+SLOT_FRIEND   = 35         ; 35..38
+NUM_SLOTS     = 39
 HIDE_Y        = 240        ; a sprite's Y below the picture
 
 ; --- Zero page: $3A is the bank shadow, the rest from $40 is ours ---
@@ -238,6 +251,7 @@ LSTEP         := $8B
 
 HAS_AIM       := $8C       ; planning: an aim is picked and still stands
 RANGE         := $8D       ; DrawRange: how far
+N_SHIPS       := $8E       ; ships in this battle
 SHOOT         := $8F       ; laser maths: the shooter
 DIRX          := $90       ; scaled direction (signed, under 64 in size)
 DIRY          := $91
@@ -311,7 +325,7 @@ SQ_T          := $E1
 HC_T          := $E2
 ANY           := $E3
 RND           := $E4       ; 2 bytes: random numbers
-OPP           := $E6       ; opponent: 0 normal CPU, 1 easy CPU, 2 a person
+MODE          := $E6       ; the kind of battle (M_*)
 AI_PHASE      := $E7       ; the CPU's thinking (ai.asm)
 AI_Q          := $E8
 AI_R          := $E9
@@ -407,8 +421,6 @@ AI_AX         = $096B      ; the aim being tried
 AI_AY         = $096C
 AI_W          = $096D      ; the weapon being tried
 AI_BURN       = $096E
-AI_LC         = $0971      ; where the enemy was last turn
-AI_LR         = $0972
 AI_SUB        = $0973      ; which part of the shot is being scored
 AI_BS_LO      = $0974      ; each weapon's best score and aim
 AI_BS_HI      = $0976
@@ -429,13 +441,28 @@ SEEN_R        = $0990
 JUMPING       = $0994      ; gone until it lands
 ON_FIELD      = $0998      ; can be touched: alive and not mid-jump
 ; 6 mines
-MINE_OWNER    = $09A0      ; its ship + 1, 0 = none
-MINE_C        = $09A6
-MINE_R        = $09AC
-MINE_X        = $09B2
-MINE_Y        = $09B8
-MINE_ARM      = $09BE      ; the tick it arms
-MINE_TURN     = $09C4      ; when it was laid
+MINE_OWNER    = $0C60      ; its ship + 1, 0 = none
+MINE_C        = $0C6C
+MINE_R        = $0C78
+MINE_X        = $0C84
+MINE_Y        = $0C90
+MINE_ARM      = $0C9C      ; the tick it arms
+MINE_TURN     = $0CA8      ; when it was laid
+; Seats
+SEAT_KIND     = $0CB4      ; each ship in the battle: who flies it (KIND_*)
+SHIP_SIDE     = $0CB8      ; its team, or itself
+PREV_C        = $0CBC      ; where it was a turn ago
+PREV_R        = $0CC0
+STAYED        = $0CC4      ; it didn't move last turn
+HUMANS        = $0CC8      ; people in this battle
+HUMAN_SEAT    = $0CC9      ; one of them
+TICK_MARK     = $0CCA      ; turn playback: the sound tick last waited for
+BEAM_N        = $0CCB      ; beams burning
+PLANNED       = $0CCC      ; the CPU has already chosen this ship's move
+CFG_KIND      = $0CD0      ; the setup screen's four seats: who flies each
+CFG_FAC       = $0CD4      ; and its faction
+SEAT_SHIP     = $0CD8      ; a seat's ship in the battle, or $FF if it's off
+SHIP_SEAT     = $0CDC      ; a ship's seat
 ; Blast rings
 FX_T          = $09D0      ; ticks old, 0 = none
 FX_X          = $09D4
@@ -448,11 +475,27 @@ AI_FS         = $09E1      ; the best flak hex's score
 AI_FC         = $09E2      ; and the hex
 AI_FR         = $09E3
 AI_HIDDEN     = $09E4      ; the enemy is cloaked
+AI_TMP2       = $09E5
+AI_ME         = $09EC      ; the seat being thought for
+AI_FOE        = $09ED      ; the enemy it's watching
+AI_MATE       = $09EE      ; its teammate, or $FF
+AI_EASY       = $09EF
+AI_MC         = $09F0      ; its hex, hull, faction and recharge
+AI_MR         = $09F1
+AI_MHP        = $09F2
+AI_MFAC       = $09F3
+AI_MWAIT      = $09F4
+AI_FHP        = $09F5      ; the enemy's hull
+AI_BAD        = $09F6      ; this shot would hit the teammate
+AI_MTC        = $09F7      ; where the teammate will be
+AI_MTR        = $09F8
+AI_MX         = $09F9      ; it at the 3 moments
+AI_MY         = $09FC
 
 SPR_Y         = $0A00      ; sprite attributes, uploaded each frame
-SPR_X         = $0A20
-SPR_N         = $0A40
-SPR_A         = $0A60
+SPR_X         = $0A40
+SPR_N         = $0A80
+SPR_A         = $0AC0
 
 ; --- The high scores ---
 SAVE_CODE     = $0B00      ; the flash routine runs here

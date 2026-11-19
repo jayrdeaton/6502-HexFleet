@@ -364,6 +364,13 @@ VideoInit:
   bne @row
   inc RC
   bpl @glyph                        ; through 127
+  ; alpha and omega, for the teams' marks
+  lda #224
+  ldx #PAT_ALPHA * 16
+  jsr GlyphTile
+  lda #234
+  ldx #(PAT_ALPHA + 1) * 16
+  jsr GlyphTile
 
   jsr CanvasReset
   jsr ClearLayer1
@@ -372,6 +379,24 @@ VideoInit:
   lda #$42                          ; display on, 16x16 sprites
   ldx #VC_REG_MODE1
   jmp VReg
+
+; GlyphTile - font character A as a 2-bit tile, at offset X in the patterns.
+GlyphTile:
+  phx
+  jsr ReadGlyph
+  pla
+  ldx #>V_L1PAT
+  jsr VAddr
+  stz RR
+@row:
+  ldy RR
+  lda GLYPH,y
+  jsr PutRow
+  inc RR
+  lda RR
+  cmp #8
+  bne @row
+  rts
 
 ; PutRow - a row of 8 one-bit pixels, A, as 2-bit pixels of value 1.
 PutRow:
@@ -390,29 +415,55 @@ PutRow:
   sta VC_DATA
   rts
 
-; CanvasColors - the canvas's values 1 and 2 become the two ships' inks.
+; CanvasColors - the canvas's sub-palettes take the seats' inks: values 1 and 2 are
+; ships 1 and 2 in both, value 3 is ship 3 in one and ship 4 in the other.
 CanvasColors:
   lda #3
   ldx #VC_REG_VBANK
   jsr VReg
-  lda #$A2
+  lda #$A2                          ; sub-palette 4, value 1
   ldx #$3D
   jsr VAddr
-  ldx #0
-@ship:
-  lda SHIP_INK,x
+  lda SHIP_INK
+  jsr PutInk
+  lda SHIP_INK+1
+  jsr PutInk
+  lda SHIP_INK+2
+  jsr PutInk
+  lda #$F2                          ; sub-palette 14, value 1
+  ldx #$3D
+  jsr VAddr
+  lda SHIP_INK
+  jsr PutInk
+  lda SHIP_INK+1
+  jsr PutInk
+  lda SHIP_INK+3
+  jsr PutInk
+  lda #0
+  ldx #VC_REG_VBANK
+  jmp VReg
+
+PutInk:
   asl a
   tay
   lda PaletteInks,y
   sta VC_DATA
   lda PaletteInks+1,y
   sta VC_DATA
-  inx
-  cpx #NUM_SHIPS
-  bne @ship
-  lda #0
-  ldx #VC_REG_VBANK
-  jmp VReg
+  rts
+
+; SetPen - canvas drawing from here on is in ship X's color. Keeps X.
+SetPen:
+  lda PenValue,x
+  sta PINK
+  lda PenSub,x
+  sta PATTR
+  rts
+
+PenValue:
+  .byte 1, 2, 3, 3
+PenSub:
+  .byte CANVAS_SUB, CANVAS_SUB, CANVAS_SUB, CANVAS_B
 
 ; ClearLayer1 - no text, no canvas.
 ClearLayer1:
@@ -919,7 +970,7 @@ BandClear:
   tax
   lda T0
   jsr VAddr
-  lda #CANVAS_SUB
+  lda #BAND_SUB
   ldy #BOARD_CELLS
 @attr:
   sta VC_DATA

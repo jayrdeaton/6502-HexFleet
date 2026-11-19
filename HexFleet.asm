@@ -57,10 +57,7 @@ CartReset:
   lda #NO_DIR
   sta HELD_DIR
   stz PREV_BTN
-  stz SHIP_FACTION                 ; Vanguard against Raider to start
-  lda #1
-  sta SHIP_FACTION+1
-  stz OPP                          ; a normal CPU to start
+  jsr InitSeats                    ; a duel against a Normal CPU to start
   lda #$A7
   sta RND
   sta RND+1

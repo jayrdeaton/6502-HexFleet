@@ -46,13 +46,15 @@ RunTurn:
   stz CLOAKED,x
 @next:
   inx
-  cpx #NUM_SHIPS
+  cpx N_SHIPS
   bne @setup
   lda ANY
   beq @quiet
   jsr SndTorpedo
 @quiet:
   jsr ThrustSound
+  lda S_TICKS
+  sta TICK_MARK
   stz TICK
   stz EXTRA
   stz REDRAW
@@ -68,8 +70,7 @@ RunTurn:
   jsr DrawBeams
   jsr DrawSprites
   jsr DrawHulls
-  lda #FRAMES_A_TICK
-  jsr WaitFrames
+  jsr TickWait
   inc TICK
   lda TICK
   cmp #TICKS
@@ -111,7 +112,7 @@ RunTurn:
   plx
   jsr DrawHpLine
   inx
-  cpx #NUM_SHIPS
+  cpx N_SHIPS
   bne @settle
   jsr ShowBoard
   jmp UploadSprites
@@ -121,9 +122,36 @@ SLOT_TORP_HIDE:
 SLOT_EXPL_HIDE:
   .byte SLOT_EXPL, SLOT_EXPL + 1, SLOT_EXPL + 2, SLOT_EXPL + 3
 
+; TickWait - hold each tick of the turn to its time by the sound timer, so a busy
+; tick is made up by a shorter wait. Without the timer, count frames.
+TickWait:
+  lda S_ON
+  beq @frames
+@wait:
+  lda S_TICKS
+  sec
+  sbc TICK_MARK
+  cmp #FRAMES_A_TICK
+  bcc @wait
+  cmp #8
+  bcc @onTime
+  lda S_TICKS                      ; far behind: don't try to catch up
+  sta TICK_MARK
+  rts
+@onTime:
+  lda TICK_MARK
+  clc
+  adc #FRAMES_A_TICK
+  sta TICK_MARK
+  rts
+@frames:
+  lda #FRAMES_A_TICK
+  jmp WaitFrames
+
 ; StillBusy - Z clear while anything is left to finish.
 StillBusy:
-  ldx #NUM_SHIPS - 1
+  ldx N_SHIPS
+  dex
 @loop:
   lda TORP_ON,x
   ora TORP_FLASH,x
@@ -327,7 +355,8 @@ MoveShips:
   lda TICK
   cmp #TICKS
   bcs @done
-  ldx #NUM_SHIPS - 1
+  ldx N_SHIPS
+  dex
 @ship:
   lda SHIP_ALIVE,x
   beq @next
@@ -352,7 +381,8 @@ MoveShips:
   rts
 
 MoveTorpedoes:
-  ldx #NUM_SHIPS - 1
+  ldx N_SHIPS
+  dex
 @torp:
   lda TORP_FLASH,x
   beq @noFlash
@@ -446,7 +476,7 @@ TorpedoContact:
 @next:
   inc TJ
   lda TJ
-  cmp #NUM_SHIPS
+  cmp N_SHIPS
   bne @ship
   rts
 
@@ -456,7 +486,14 @@ BurnLasers:
   bcc @done
   cmp #TICKS
   bcs @done
-  and #3
+  ldx #3                           ; with several beams up, redraw them less often
+  ldy BEAM_N
+  cpy #3
+  bcc @often
+  ldx #7
+@often:
+  stx T0
+  and T0
   bne @noDraw
   lda #1
   sta REDRAW
@@ -474,9 +511,10 @@ BurnLasers:
 @next:
   inc TI
   lda TI
-  cmp #NUM_SHIPS
+  cmp N_SHIPS
   bne @ship
   lda ANY
+  sta BEAM_N
   bne @on
   jmp SndLaserOff
 @on:
@@ -533,7 +571,7 @@ LaserShip:
 @nextT:
   inc TJ
   lda TJ
-  cmp #NUM_SHIPS
+  cmp N_SHIPS
   bne @target
   ; a change of target redraws the beam at once
   ldx SHOOT
@@ -593,7 +631,8 @@ LaserShip:
 
 ; ThrustSound - engines, if any ship is going anywhere.
 ThrustSound:
-  ldx #NUM_SHIPS - 1
+  ldx N_SHIPS
+  dex
 @ship:
   lda SHIP_ALIVE,x
   beq @next
@@ -644,6 +683,9 @@ TestTarget:
   sta BEST
 @no:
   rts
+
+; (the CPU's code in its own bank uses this too)
+.segment "CART"
 
 ; LineTest - carry set if a ship at (VX, VY) from the start of the line
 ; (DIRX, DIRY), length LEN, is ahead and touching it. Leaves DOT, how far along.
@@ -730,9 +772,13 @@ LineTest:
   clc
   rts
 
+
+.segment "BANK00"
+
 ; CheckWrecks - ships out of hull blow up; explosions run their course.
 CheckWrecks:
-  ldx #NUM_SHIPS - 1
+  ldx N_SHIPS
+  dex
 @ship:
   lda SHIP_ALIVE,x
   beq @burning
@@ -781,7 +827,7 @@ DrawBeams:
 @next:
   inc TI
   lda TI
-  cmp #NUM_SHIPS
+  cmp N_SHIPS
   bne @ship
 @show:
   jsr DrawFx
@@ -795,9 +841,7 @@ DrawBeam:
   sta LX
   lda POS_Y_HI,x
   sta LY
-  txa                              ; value 1 or 2: this ship's color
-  inc a
-  sta PINK
+  jsr SetPen
   stz LTGT
   ldy BEAM_TGT,x
   cpy #$FF
@@ -1017,7 +1061,7 @@ DrawSprites:
 @next:
   inc TI
   lda TI
-  cmp #NUM_SHIPS
+  cmp N_SHIPS
   beq @upload
   jmp @ship
 @upload:
@@ -1039,7 +1083,7 @@ DrawHulls:
   jsr DrawHpLine
 @next:
   inx
-  cpx #NUM_SHIPS
+  cpx N_SHIPS
   bne @ship
 @done:
   rts

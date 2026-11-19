@@ -1,9 +1,10 @@
 ; =============================================================================
 ;   ai.asm - the CPU opponent
 ; =============================================================================
-;   Ship 1 plans from the board as the turn began and never sees the person's
-;   plan. It thinks a slice at a time during the person's planning (AiWork, once
-;   a frame), so there's nothing to wait for.
+;   Each CPU seat plans in turn, from the board as the turn began, and never sees
+;   a person's plan. It thinks a slice at a time during the people's planning
+;   (AiWork, once a frame), so there's little to wait for. It watches its nearest
+;   enemy, and a teammate is something not to shoot or fly into.
 ;
 ;   Normal: it picks a hex that keeps a good distance and slides sideways off
 ;   the line a shot would come down, guesses where the enemy may end up (staying
@@ -14,16 +15,16 @@
 ;   was last seen, and it knows nothing of the enemy's mines.
 ; =============================================================================
 
-.segment "BANK00"
-
-ME            = 1                  ; the CPU's ship
-FOE           = 0
+.segment "BANK04"
 
 AI_MOVES      = 0                  ; AI_PHASE: scoring moves,
 AI_SETUP      = 1                  ; getting ready to aim,
 AI_AIMS       = 2                  ; scoring shots,
 AI_DONE       = 3                  ; the plan is in
 AI_FLAK       = 4                  ; or still weighing a flak shell
+AI_NEXT       = 5                  ; on to the next CPU seat
+AI_IDLE       = AI_DONE
+AI_BANK       = 4
 
 MOVES_A_SLICE = 4
 
@@ -37,6 +38,8 @@ SampleK:
 ; A laser's burn a quarter-turn by distance in hexes
 BurnByRange:
   .byte 25, 25, 25, 24, 23, 21, 20, 19, 18, 16, 15, 14, 13
+
+.segment "CART"
 
 ; Rnd - a pseudo-random byte in A. Clobbers X.
 Rnd:
@@ -53,6 +56,8 @@ Rnd:
   bne @step
   lda RND
   rts
+
+.segment "BANK04"
 
 ; HexStep - (AI_HC, AI_HR) moved by axial (AI_HQ, AI_HS) into (AI_OC, AI_OR).
 ; Carry set if that's on the board.
@@ -132,36 +137,156 @@ AddEnd:
   inc AI_N
   rts
 
-; AiStart - begin planning ship ME's turn.
+; AiBegin4 - a new turn: the first CPU seat is up next.
+AiBegin4:
+  ldx #NUM_SHIPS - 1
+@ship:
+  stz PLANNED,x
+  dex
+  bpl @ship
+  lda #$FF
+  sta AI_ME
+  lda #AI_NEXT
+  sta AI_PHASE
+  rts
+
+; AiNextSeat - start the next CPU seat with an enemy to fight, or finish.
+AiNextSeat:
+  inc AI_ME
+  ldx AI_ME
+  cpx N_SHIPS
+  bcs @done
+  lda SHIP_ALIVE,x
+  beq AiNextSeat
+  lda SEAT_KIND,x
+  beq AiNextSeat
+  jsr AiLoadSeat
+  bcc AiNextSeat
+  jmp AiStart
+@done:
+  lda #AI_DONE
+  sta AI_PHASE
+  rts
+
+; AiLoadSeat - seat X's own details, its nearest enemy and its teammate. Carry clear
+; if it has no enemy left.
+AiLoadSeat:
+  lda SHIP_C,x
+  sta AI_MC
+  sta HD_C1
+  lda SHIP_R,x
+  sta AI_MR
+  sta HD_R1
+  lda SHIP_HP_HI,x
+  sta AI_MHP
+  lda SHIP_FACTION,x
+  sta AI_MFAC
+  lda SPECIAL_WAIT,x
+  sta AI_MWAIT
+  stz AI_EASY
+  lda SEAT_KIND,x
+  cmp #KIND_EASY
+  bne @kind
+  inc AI_EASY
+@kind:
+  lda #$FF
+  sta AI_FOE
+  sta AI_MATE
+  sta AI_TMP2
+  stz AI_CNT
+@seat:
+  ldy AI_CNT
+  cpy N_SHIPS
+  bcs @picked
+  cpy AI_ME
+  beq @next
+  lda SHIP_ALIVE,y
+  beq @next
+  ldx AI_ME
+  lda SHIP_SIDE,y
+  cmp SHIP_SIDE,x
+  bne @enemy
+  sty AI_MATE                      ; on our side
+  lda SHIP_C,y                     ; where it's going, if it has already chosen
+  ldx PLANNED,y
+  beq @mateHex
+  lda PLAN_C,y
+@mateHex:
+  sta AI_MTC
+  lda SHIP_R,y
+  ldx PLANNED,y
+  beq @mateRow
+  lda PLAN_R,y
+@mateRow:
+  sta AI_MTR
+  bra @next
+@enemy:
+  lda CLOAKED,y                    ; a cloaked ship is only where it was last seen
+  beq @seen
+  lda SEEN_C,y
+  sta HD_C2
+  lda SEEN_R,y
+  sta HD_R2
+  bra @measure
+@seen:
+  lda SHIP_C,y
+  sta HD_C2
+  lda SHIP_R,y
+  sta HD_R2
+@measure:
+  jsr HexDist
+  cmp AI_TMP2
+  bcs @next
+  sta AI_TMP2
+  lda AI_CNT
+  sta AI_FOE
+@next:
+  inc AI_CNT
+  bra @seat
+@picked:
+  ldy AI_FOE
+  cpy #$FF
+  beq @noEnemy
+  lda SHIP_HP_HI,y
+  sta AI_FHP
+  sec
+  rts
+@noEnemy:
+  clc
+  rts
+
+; AiStart - begin planning seat AI_ME's turn.
 AiStart:
   stz AI_PHASE
   lda #$FD
   sta AI_Q
   sta AI_R
   stz AI_BEST
-  lda SHIP_C+ME
+  lda AI_MC
   sta AI_BC
-  lda SHIP_R+ME
+  lda AI_MR
   sta AI_BR
-  ldx #ME
-  jsr ShipCenter
+  ldx AI_MC
+  ldy AI_MR
+  jsr HexCenter
   lda HX
   sta AI_SX
   lda HY
   sta AI_SY
   ; where it knows the enemy to be
-  lda CLOAKED+FOE
+  ldy AI_FOE
+  lda CLOAKED,y
   sta AI_HIDDEN
   beq @inSight
-  lda SEEN_C+FOE
+  lda SEEN_C,y
   sta AI_KC
-  lda SEEN_R+FOE
+  lda SEEN_R,y
   sta AI_KR
   bra @located
 @inSight:
-  lda SHIP_C+FOE
+  lda SHIP_C,y
   sta AI_KC
-  lda SHIP_R+FOE
+  lda SHIP_R,y
   sta AI_KR
 @located:
   ldx AI_KC
@@ -207,21 +332,14 @@ AiStart:
   lda AI_HIDDEN
   bne @weight
   ldy #2
-  lda AI_OC
-  cmp AI_LC
-  bne @weight
-  lda AI_OR
-  cmp AI_LR
-  bne @weight
+  ldx AI_FOE
+  lda STAYED,x
+  beq @weight
   ldy #5
   inc AI_STAYED
 @weight:
   tya
   jsr AddEnd
-  lda AI_KC
-  sta AI_LC
-  lda AI_KR
-  sta AI_LR
   stz AI_I
 @dir:
   ldx AI_I                         ; 2 hexes off, or 3 if it's out of sight
@@ -300,8 +418,8 @@ AiStart:
   bne @end
   rts
 
-; AiWork - one slice of thinking.
-AiWork:
+; AiWork4 - one slice of thinking.
+AiWork4:
   lda AI_PHASE
   beq AiMoves
   cmp #AI_SETUP
@@ -313,17 +431,23 @@ AiWork:
   jmp AiAim
 @flak:
   cmp #AI_FLAK
-  bne @done
+  bne @next
   jmp AiFlak
+@next:
+  cmp #AI_NEXT
+  bne @done
+  jmp AiNextSeat
 @done:
   rts
 
-; AiFinish - think until the plan is in.
-AiFinish:
-  jsr AiWork
+; AiFinish4 - think until every plan is in.
+AiFinish4:
   lda AI_PHASE
   cmp #AI_DONE
-  bne AiFinish
+  beq @done
+  jsr AiWork4
+  bra AiFinish4
+@done:
   rts
 
 ; AiMoves - score some of the hexes within reach.
@@ -337,9 +461,9 @@ AiMoves:
   jsr Abs8
   cmp #MOVE_RANGE + 1
   bcs @skip
-  lda SHIP_C+ME
+  lda AI_MC
   sta AI_HC
-  lda SHIP_R+ME
+  lda AI_MR
   sta AI_HR
   lda AI_Q
   sta AI_HQ
@@ -388,11 +512,11 @@ ScoreMove:
 @apart:
   ; the distance it wants: near when easy, or by who's ahead
   ldy #2
-  lda OPP
+  lda AI_EASY
   bne @want
   ldy #4
-  lda SHIP_HP_HI+ME
-  cmp SHIP_HP_HI+FOE
+  lda AI_MHP
+  cmp AI_FHP
   bcs @want
   ldy #6
 @want:
@@ -409,7 +533,7 @@ ScoreMove:
   sec
   sbc AI_TMP
   sta AI_S
-  lda OPP
+  lda AI_EASY
   beq @normal
   jsr Rnd
   and #15
@@ -493,6 +617,7 @@ ScoreMove:
   sbc #4
   sta AI_S
 @jitter:
+  jsr MatePenalty
   jsr Rnd
   and #7
 @add:
@@ -505,6 +630,139 @@ ScoreMove:
   sta AI_BC
   lda AI_OR
   sta AI_BR
+@done:
+  rts
+
+; NearMate - carry set if (AI_OC, AI_OR) is on or beside where the teammate will be.
+NearMate:
+  lda AI_MATE
+  bmi @no
+  lda AI_OC
+  sta HD_C1
+  lda AI_OR
+  sta HD_R1
+  lda AI_MTC
+  sta HD_C2
+  lda AI_MTR
+  sta HD_R2
+  jsr HexDist
+  cmp #2
+  bcs @no
+  sec
+  rts
+@no:
+  clc
+  rts
+
+; MatePenalty - this hex is worth less beside the teammate or its mines.
+MatePenalty:
+  lda AI_MATE
+  bmi @done
+  jsr NearMate
+  bcc @mines
+  lda #8
+  jsr LessScore
+@mines:
+  ldy #NUM_MINES - 1
+@mine:
+  lda MINE_OWNER,y
+  beq @next
+  dec a
+  cmp AI_MATE
+  bne @next
+  lda MINE_C,y
+  sta HD_C2
+  lda MINE_R,y
+  sta HD_R2
+  phy
+  jsr HexDist
+  ply
+  cmp #2
+  bcs @next
+  lda #25
+  jsr LessScore
+@next:
+  dey
+  bpl @mine
+@done:
+  rts
+
+LessScore:
+  sta AI_TMP
+  lda AI_S
+  sec
+  sbc AI_TMP
+  bcs @left
+  lda #0
+@left:
+  sta AI_S
+  rts
+
+; MateMoments - where the teammate will be at the three moments.
+MateMoments:
+  lda AI_MATE
+  bmi @done
+  tay
+  ldx SHIP_C,y
+  lda SHIP_R,y
+  tay
+  jsr HexCenter
+  lda HX
+  sta AI_OC
+  lda HY
+  sta AI_OR
+  ldx AI_MTC
+  ldy AI_MTR
+  jsr HexCenter
+  stz AI_CNT
+@moment:
+  ldy AI_CNT
+  lda SampleK,y
+  sta AI_F
+  lda AI_OC
+  sta AI_A
+  lda HX
+  sta AI_B
+  jsr Interp
+  ldy AI_CNT
+  sta AI_MX,y
+  lda AI_OR
+  sta AI_A
+  lda HY
+  sta AI_B
+  jsr Interp
+  ldy AI_CNT
+  sta AI_MY,y
+  inc AI_CNT
+  lda AI_CNT
+  cmp #3
+  bne @moment
+@done:
+  rts
+
+; MateOnLine - would the line from (AI_A, AI_B) touch the teammate at moment A?
+MateOnLine:
+  tay
+  lda AI_MATE
+  bmi @done
+  lda AI_MX,y
+  sec
+  sbc AI_A
+  sta VX
+  lda #0
+  sbc #0
+  sta VX+1
+  lda AI_MY,y
+  sec
+  sbc AI_B
+  sta VY
+  lda #0
+  sbc #0
+  sta VY+1
+  jsr LineTest
+  bcc @done
+  lda #1
+  sta AI_BAD
 @done:
   rts
 
@@ -540,6 +798,7 @@ AiSetup:
   iny
   cpy #3
   bne @moment
+  jsr MateMoments
   ; aim at where the enemy is unless something scores better
   lda AI_KC
   sta AI_BAC
@@ -573,7 +832,7 @@ AiSetup:
   tax
   lda BurnByRange,x
   sta AI_BURN
-  lda OPP
+  lda AI_EASY
   beq @normal
   ; easy: lasers up close, otherwise either weapon
   lda AI_TMP
@@ -606,6 +865,7 @@ AiAim:
   bne @moment
   stz AI_SC
   stz AI_SC+1
+  stz AI_BAD
 @moment:
   jsr LaserMoment
   inc AI_SUB
@@ -628,8 +888,13 @@ AiAim:
 @done:
   rts
 
-; KeepShot - AI_SC, plus a little noise, against weapon AI_W's best so far.
+; KeepShot - AI_SC, plus a little noise, against weapon AI_W's best so far. A shot
+; that would hit the teammate doesn't count.
 KeepShot:
+  lda AI_BAD
+  beq @fair
+  rts
+@fair:
   jsr Rnd
   and #15
   clc
@@ -763,6 +1028,8 @@ LaserMoment:
   jsr DirLength
   lda LEN
   beq @done
+  lda AI_S
+  jsr MateOnLine
   stz AI_K
 @end:
   jsr SetV
@@ -783,6 +1050,7 @@ LaserMoment:
 ScoreTorpedo:
   stz AI_SC
   stz AI_SC+1
+  stz AI_BAD
   lda AI_SX
   sta AI_A
   lda AI_SY
@@ -806,6 +1074,12 @@ ScoreTorpedo:
   jsr DirLength
   lda LEN
   beq @done
+  lda #0
+  jsr MateOnLine
+  lda #1
+  jsr MateOnLine
+  lda #2
+  jsr MateOnLine
   stz AI_K
 @end:
   lda #1                           ; first, roughly how far along it is
@@ -838,7 +1112,7 @@ ScoreTorpedo:
   jsr SetV
   jsr LineTest
   bcc @next
-  ldy SHIP_FACTION+ME              ; counted half again: it lands all at once
+  ldy AI_MFAC              ; counted half again: it lands all at once
   lda TorpedoDamage,y
   sta AI_TMP
   lsr a
@@ -853,20 +1127,23 @@ ScoreTorpedo:
 @done:
   rts
 
-; AiCommit - write the plan.
+; AiCommit - write this seat's plan, and on to the next.
 AiCommit:
+  ldx AI_ME
   lda AI_BC
-  sta PLAN_C+ME
+  sta PLAN_C,x
   lda AI_BR
-  sta PLAN_R+ME
+  sta PLAN_R,x
   lda AI_BAC
-  sta AIM_C+ME
+  sta AIM_C,x
   lda AI_BAR
-  sta AIM_R+ME
+  sta AIM_R,x
   lda AI_BW
-  sta PLAN_WEAPON+ME
+  sta PLAN_WEAPON,x
   lda AI_SPEC
-  sta PLAN_SPECIAL+ME
-  lda #AI_DONE
+  sta PLAN_SPECIAL,x
+  lda #1
+  sta PLANNED,x
+  lda #AI_NEXT
   sta AI_PHASE
   rts

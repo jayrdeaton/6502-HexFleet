@@ -18,6 +18,24 @@
 
 RechargeTurns:
   .byte 1, 3, 1, 5
+TorpedoDamage:
+  .byte 30, 35, 35, 35
+
+; The CPU's code is in its own bank; these reach it from anywhere.
+.macro IN_AI_BANK target
+  lda #AI_BANK
+  jsr SetBank
+  jsr target
+  lda #0
+  jmp SetBank
+.endmacro
+
+AiBegin:
+  IN_AI_BANK AiBegin4
+AiWork:
+  IN_AI_BANK AiWork4
+AiFinish:
+  IN_AI_BANK AiFinish4
 
 SqLo:
 .repeat AREA_REACH + 1, I
@@ -104,13 +122,21 @@ NeedsAim:
   clc
   rts
 
-; CanView - carry set if ship X's hidden things show right now. Keeps X, Y.
+; CanView - carry set if ship X's hidden things show right now: to the viewer and
+; anyone on their side. Keeps X, Y.
 CanView:
-  cpx VIEWER
-  beq @yes
   lda VIEWER
   cmp #VIEW_ALL
   beq @yes
+  cmp #VIEW_NONE
+  beq @no
+  phy
+  tay
+  lda SHIP_SIDE,y
+  ply
+  cmp SHIP_SIDE,x
+  beq @yes
+@no:
   clc
   rts
 @yes:
@@ -188,11 +214,15 @@ DrawChoice:
   lda #ROW_MSG5
   jmp Print
 
-; DrawTip - the title screen: what the selected seat's special does.
+; DrawTip - the title screen: the picked seat's ship and what its special does.
 DrawTip:
   lda SEL
-  cmp #2
+  beq @none
+  cmp #IT_MUSIC
   bcc @seat
+@none:
+  lda #ROW_TIP0
+  jsr PanelClear
   lda #ROW_TIP1
   jsr PanelClear
   lda #ROW_TIP2
@@ -200,12 +230,24 @@ DrawTip:
   lda #ROW_TIP3
   jmp PanelClear
 @seat:
+  dec a
+  lsr a
   tax
-  lda SHIP_INK,x
+  ldy SEAT_SHIP,x
+  bmi @none
+  lda SHIP_INK,y
   sta TXT_INK
-  lda SHIP_FACTION,x
+  lda CFG_FAC,x
   asl a
   sta MN_I
+  tay
+  lda FactionNames+1,y
+  pha
+  lda FactionNames,y
+  tax
+  ply
+  lda #ROW_TIP0
+  jsr Print
   tay
   lda TipName+1,y
   pha
@@ -313,10 +355,13 @@ ShowSeen:
   rts
 
 HideSeen:
-  ldx #SLOT_SEEN
+  ldx #SLOT_SEEN + NUM_SHIPS - 1
+@slot:
   jsr HideSprite
-  ldx #SLOT_SEEN + 1
-  jmp HideSprite
+  dex
+  cpx #SLOT_SEEN - 1
+  bne @slot
+  rts
 
 ; ResetSpecials - nothing used, nothing on the board.
 ResetSpecials:
@@ -668,7 +713,8 @@ CheckMines:
   lda MINE_Y,x
   sta AREA_Y
   stz MN_HIT
-  ldy #NUM_SHIPS - 1
+  ldy N_SHIPS
+  dey
 @ship:
   cpy MN_OWNER
   beq @nextShip
@@ -702,7 +748,8 @@ LandJumps:
   lda TICK
   cmp #HALF_TURN
   bne @done
-  ldx #NUM_SHIPS - 1
+  ldx N_SHIPS
+  dex
 @arrive:
   lda JUMPING,x
   beq @nextArrive
@@ -719,7 +766,8 @@ LandJumps:
 @nextArrive:
   dex
   bpl @arrive
-  ldx #NUM_SHIPS - 1
+  ldx N_SHIPS
+  dex
 @ship:
   lda JUMPING,x
   beq @next
@@ -733,7 +781,8 @@ LandJumps:
   inc a
   jsr AddBlast
   jsr SndWarp
-  ldy #NUM_SHIPS - 1
+  ldy N_SHIPS
+  dey
 @other:
   cpy MN_I
   beq @nextOther
@@ -769,7 +818,8 @@ FlakBursts:
   lda TICK
   cmp #LAST_TICK
   bne @done
-  ldx #NUM_SHIPS - 1
+  ldx N_SHIPS
+  dex
 @ship:
   lda TORP_ON,x
   cmp #TORP_SHELL
@@ -784,7 +834,8 @@ FlakBursts:
   inc a
   jsr AddBlast
   jsr SndBlast
-  ldy #NUM_SHIPS - 1
+  ldy N_SHIPS
+  dey
 @other:
   cpy MN_I
   beq @nextOther
@@ -925,7 +976,10 @@ DrawFx:
 @size:
   sty FX_OFF
   lda FX_INK,x
-  sta PINK
+  dec a
+  tax
+  jsr SetPen
+  ldx FX_I
   lda #RING_POINTS
   sta FX_N
 @point:
@@ -960,6 +1014,8 @@ DrawFx:
   bpl @fx
   rts
 
+.segment "BANK04"
+
 ; =============================================================================
 ;   The CPU's specials
 ; =============================================================================
@@ -967,11 +1023,11 @@ DrawFx:
 ; AiSpecial - the move and shot are chosen: use the special as well?
 AiSpecial:
   stz AI_SPEC
-  lda SPECIAL_WAIT+ME
+  lda AI_MWAIT
   bne @commit
-  lda SHIP_C+ME
+  lda AI_MC
   sta HD_C1
-  lda SHIP_R+ME
+  lda AI_MR
   sta HD_R1
   lda AI_KC
   sta HD_C2
@@ -979,9 +1035,9 @@ AiSpecial:
   sta HD_R2
   jsr HexDist
   sta AI_D
-  lda OPP
+  lda AI_EASY
   bne AiEasySpecial
-  lda SHIP_FACTION+ME
+  lda AI_MFAC
   cmp #SP_MINE
   beq AiMine
   cmp #SP_CLOAK
@@ -1003,7 +1059,7 @@ AiEasySpecial:
   jsr Rnd
   and #7
   bne @commit
-  lda SHIP_FACTION+ME
+  lda AI_MFAC
   cmp #SP_MINE
   beq AiMine
   cmp #SP_CLOAK
@@ -1038,7 +1094,7 @@ AiMine:
   lda AI_D
   cmp #8
   bcs @commit
-  ldx #ME
+  ldx AI_ME
   jsr OwnMineHere
   bcs @commit
   inc AI_SPEC
@@ -1051,8 +1107,8 @@ AiCloak:
   cmp #7
   bcs @commit
   ldy #1
-  lda SHIP_HP_HI+ME
-  cmp SHIP_HP_HI+FOE
+  lda AI_MHP
+  cmp AI_FHP
   bcs @roll
   ldy #2
 @roll:
@@ -1073,10 +1129,10 @@ AiJump:
   lda AI_D
   cmp #JUMP_RANGE + 1
   bcs @away
-  lda SHIP_HP_HI+ME
+  lda AI_MHP
   cmp #RAM_RECOIL + 1
   bcc @away
-  lda SHIP_HP_HI+FOE
+  lda AI_FHP
   cmp #RAM_DAMAGE + 1
   bcc @dive
   lda AI_STAYED
@@ -1085,6 +1141,12 @@ AiJump:
   and #1
   bne @away
 @dive:
+  lda AI_KC                        ; not onto the teammate
+  sta AI_OC
+  lda AI_KR
+  sta AI_OR
+  jsr NearMate
+  bcs @away
   lda AI_KC
   sta AI_BC
   lda AI_KR
@@ -1092,7 +1154,7 @@ AiJump:
   inc AI_SPEC
   jmp AiCommit
 @away:
-  lda SHIP_HP_HI+ME
+  lda AI_MHP
   cmp #AI_HURT
   bcs @commit
   lda AI_D
@@ -1105,9 +1167,9 @@ AiJump:
   lda #JUMP_RANGE
   sta AI_K
 @hop:
-  lda SHIP_C+ME
+  lda AI_MC
   sta AI_HC
-  lda SHIP_R+ME
+  lda AI_MR
   sta AI_HR
   ldx AI_I
   lda DirQ,x
@@ -1177,9 +1239,11 @@ AiFlak:
   jsr HexStep
   bcc @next
 @have:
-  lda SHIP_C+ME
+  jsr NearMate                     ; a shell here would catch the teammate
+  bcs @next
+  lda AI_MC
   sta HD_C1
-  lda SHIP_R+ME
+  lda AI_MR
   sta HD_R1
   lda AI_OC
   sta HD_C2

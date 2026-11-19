@@ -13,24 +13,13 @@ FactionNames:
   .word TxtVanguard, TxtRaider, TxtSwarm, TxtWraith
 MaxHull:
   .byte 125, 105, 125, 115
-TorpedoDamage:
-  .byte 30, 35, 35, 35
-SeatRow:                           ; palette rows: azure, orange, green, violet
-  .byte $9, $3, $6, $B
-SeatInk:
+; Ship colors, by faction, then each faction's second color: palette row and ink
+ColorRow:
+  .byte $9, $3, $6, $B,  $8, $2, $5, $4
+ColorInk:
   .byte INK_AZURE, INK_ORANGE, INK_GREEN, INK_VIOLET
-AltRow:                            ; a second ship of the same faction
-  .byte $8, $2, $5, $C
-AltInk:
-  .byte INK_CYAN, INK_RED, INK_LIME, INK_PINK
-
-; Where each seat starts: top-left and bottom-right, facing each other
-SpawnC:
-  .byte 0, 9
-SpawnR:
-  .byte 0, 14
-SpawnHead:
-  .byte 6, 0
+  .byte INK_CYAN, INK_RED, INK_LIME, INK_YELLOW
+SeatInk = ColorInk
 
 TxtVanguard:  .asciiz "VANGUARD"
 TxtRaider:    .asciiz "RAIDER"
@@ -39,8 +28,8 @@ TxtWraith:    .asciiz "WRAITH"
 TxtTitle:     .asciiz "HEXFLEET"
 TxtTurn:      .asciiz "TURN "
 TxtPlayer:    .asciiz "PLAYER "
-TxtUpDown:    .asciiz "UP/DN: SEAT"
-TxtLeftRight: .asciiz "LT/RT: SHIP"
+TxtUpDown:    .asciiz "UP/DN: ITEM"
+TxtLeftRight: .asciiz "LT/RT: SET"
 TxtStart:     .asciiz "FIRE: START"
 TxtPressFire: .asciiz "PRESS FIRE"
 TxtPickMove:  .asciiz "PICK A MOVE"
@@ -61,16 +50,14 @@ TxtDraw:      .asciiz "DRAW"
 TxtGameOver:  .asciiz "GAME OVER"
 TxtFireMenu:  .asciiz "FIRE: MENU"
 TxtCpu:       .asciiz "CPU"
-TxtOpponent:  .asciiz "OPPONENT"
-TxtNormal:    .asciiz "NORMAL"
-TxtEasy:      .asciiz "EASY"
 TxtMusicOn:   .asciiz "MUSIC ON"
 TxtMusicOff:  .asciiz "MUSIC OFF"
-TxtHuman:     .asciiz "2 PLAYERS"
+TxtAllFight:  .asciiz "FREE 4 ALL"
+TxtTeams:     .asciiz "TEAMS"
+TxtAlphaWins: .asciiz "ALPHA WINS"
+TxtOmegaWins: .asciiz "OMEGA WINS"
 TxtYouWin:    .asciiz "YOU WIN"
 TxtCpuWins:   .asciiz "CPU WINS"
-OppNames:
-  .word TxtNormal, TxtEasy, TxtHuman, TxtLink
 
 ; --- The main loop ---
 
@@ -92,32 +79,48 @@ StateTable:
 
 ; --- Small helpers ---
 
-; SetColors - each ship's sprite row and ink from its faction; a second ship
-; of the same faction takes the faction's other colors.
+; SetColors - each seat takes its faction's color, or its second color, or else the
+; first one no other seat has.
 SetColors:
-  jsr PickColors
+  stz T0                           ; colors taken, as bits
+  ldx #0
+@seat:
+  ldy SHIP_FACTION,x
+  lda ColorBit,y
+  bit T0
+  beq @take
+  lda ColorBit+4,y
+  bit T0
+  bne @search
+  tya
+  clc
+  adc #4
+  tay
+  bra @take2
+@search:
+  ldy #0
+@look:
+  lda ColorBit,y
+  bit T0
+  beq @take2
+  iny
+  bra @look
+@take:
+@take2:
+  lda ColorBit,y
+  ora T0
+  sta T0
+  lda ColorRow,y
+  sta SHIP_ROW,x
+  lda ColorInk,y
+  sta SHIP_INK,x
+  inx
+  cpx #NUM_SHIPS
+  bne @seat
   jmp CanvasColors
 
-PickColors:
-  ldx SHIP_FACTION
-  lda SeatRow,x
-  sta SHIP_ROW
-  lda SeatInk,x
-  sta SHIP_INK
-  ldx SHIP_FACTION+1
-  cpx SHIP_FACTION
-  beq @same
-  lda SeatRow,x
-  sta SHIP_ROW+1
-  lda SeatInk,x
-  sta SHIP_INK+1
-  rts
-@same:
-  lda AltRow,x
-  sta SHIP_ROW+1
-  lda AltInk,x
-  sta SHIP_INK+1
-  rts
+ColorBit:
+  .byte 1, 2, 4, 8, 16, 32, 64, 128
 
 ; ShowShip - ship X's sprite centered on (HX, HY). A cloaked ship is gray for
 ; whoever may see it and hidden from anyone else. Keeps X.
@@ -176,10 +179,61 @@ ShowShipsOnHexes:
   bne @loop
   rts
 
+; ShowFriends - while someone plans, a hex round each ship on their side.
+ShowFriends:
+  ldx #0
+@ship:
+  phx
+  lda STATE
+  cmp #ST_PLAN
+  bne @hide
+  cpx PLAYER
+  beq @hide
+  lda SHIP_ALIVE,x
+  beq @hide
+  ldy PLAYER
+  lda SHIP_SIDE,y
+  cmp SHIP_SIDE,x
+  bne @hide
+  jsr ShipCenter
+  ldy PLAYER
+  lda SHIP_ROW,y
+  ora #SPR_FRONT
+  tay
+  txa
+  clc
+  adc #SLOT_FRIEND
+  tax
+  lda #PAT_DEST
+  jsr PlaceSprite
+  bra @next
+@hide:
+  txa
+  clc
+  adc #SLOT_FRIEND
+  tax
+  jsr HideSprite
+@next:
+  plx
+  inx
+  cpx #NUM_SHIPS
+  bne @ship
+  rts
+
+HideFriends:
+  ldx #SLOT_FRIEND + NUM_SHIPS - 1
+@slot:
+  jsr HideSprite
+  dex
+  cpx #SLOT_FRIEND - 1
+  bne @slot
+  rts
+
 ; ShowBoard - the ships, and what the viewer may see of mines and cloaks.
 ShowBoard:
   jsr ShowShipsOnHexes
   jsr ShowMines
+  jsr ShowFriends
   jmp ShowSeen
 
 ; ClearMessages - blank the panel's message rows.
@@ -211,7 +265,8 @@ PrintPlayer:
   ldx #<TxtPlayer
   ldy #>TxtPlayer
   jsr LineStr
-  lda PLAYER
+  ldx PLAYER
+  lda SHIP_SEAT,x
   clc
   adc #'1'
   jsr LineChar
@@ -219,17 +274,13 @@ PrintPlayer:
   pla
   jmp LineShow
 
-; SeatIsCpu - carry set if seat PLAYER is the CPU's.
+; SeatIsCpu - carry set if seat PLAYER is a CPU's.
 SeatIsCpu:
-  lda PLAYER
+  jsr IsLink
   beq VsPerson
-  ; falls through
-
-; VsCpu - carry set if the opponent is the CPU.
-VsCpu:
-  lda OPP
-  cmp #2
-  bcs VsPerson
+  ldx PLAYER
+  lda SEAT_KIND,x
+  beq VsPerson
   sec
   rts
 VsPerson:
@@ -263,9 +314,7 @@ DrawTurnLine:
 ShipRow:
   txa
   asl a
-  stx MTMP
   clc
-  adc MTMP
   adc #ROW_NAME0
   rts
 
@@ -290,18 +339,25 @@ DrawNameLine:
   lda #'S'
   bra @tag
 @local:
-  lda HPL_SHIP
+  ldx HPL_SHIP
+  lda MODE
+  cmp #M_TEAMS
+  bne @kind
+  lda SHIP_SIDE,x                  ; the team's letter
+  clc
+  adc #PAT_ALPHA
+  bra @first
+@kind:
+  lda SEAT_KIND,x
   beq @person
-  jsr VsCpu
-  bcc @person
-  lda #'A'                         ; "AI RAIDER"
-  jsr LineChar
-  lda #'I'
-  bra @tag
+  lda #'C'
+  bra @first
 @person:
   lda #'P'
+@first:
   jsr LineChar
-  lda HPL_SHIP
+  ldx HPL_SHIP
+  lda SHIP_SEAT,x
   clc
   adc #'1'
 @tag:
@@ -382,9 +438,201 @@ HideMarkers:
   ldx #SLOT_AIM
   jmp HideSprite
 
-; =============================================================================
-;   Title
-; =============================================================================
+; ====================================================================
+;   Setup: the title screen
+; ====================================================================
+;   A list to walk with up and down, and left and right to change what's picked:
+;   the kind of battle, then for each seat who flies it and which ship, then the
+;   music. Fire starts.
+
+IT_MODE       = 0
+IT_MUSIC      = 9
+
+ModeNames:
+  .word TxtAllFight, TxtTeams, TxtLink
+WhoNames:
+  .byte "PLRCPUEZYOFFYOULNK"
+ShortNames:
+  .byte "VANGRAIDSWRMWRTH"
+; Where ships start: 2, 3, then 4 of them (4 a layout). Teams use the last, by seat.
+SpawnC:
+  .byte 0, 9, 0, 0,   0, 10, 0, 0,   0, 9, 0, 9
+SpawnR:
+  .byte 0, 14, 0, 0,  0, 7, 14, 0,   0, 0, 14, 14
+
+; InitSeats - you against three Normal CPUs, everyone for themselves.
+InitSeats:
+  ldx #NUM_SHIPS - 1
+@seat:
+  txa
+  sta CFG_FAC,x
+  lda #KIND_CPU
+  sta CFG_KIND,x
+  dex
+  bpl @seat
+  stz CFG_KIND
+  stz MODE
+  ; falls through
+
+; SetMode - the seats that are on become the battle's ships, numbered from 0.
+SetMode:
+  lda MODE
+  cmp #M_LINK
+  bne @seats
+  lda #2                           ; linked: yours and the other machine's
+  sta N_SHIPS
+  ldx #1
+@link:
+  lda CFG_FAC,x
+  sta SHIP_FACTION,x
+  txa
+  sta SHIP_SIDE,x
+  sta SHIP_SEAT,x
+  sta SEAT_SHIP,x
+  stz SEAT_KIND,x
+  dex
+  bpl @link
+  lda #$FF
+  sta SEAT_SHIP+2
+  sta SEAT_SHIP+3
+  rts
+@seats:
+  ldx #0
+  ldy #0
+@seat:
+  lda CFG_KIND,x
+  cmp #KIND_OFF
+  bne @on
+  lda #$FF
+  sta SEAT_SHIP,x
+  bra @next
+@on:
+  sta SEAT_KIND,y
+  lda CFG_FAC,x
+  sta SHIP_FACTION,y
+  txa
+  sta SHIP_SEAT,y
+  tya
+  sta SEAT_SHIP,x
+  lda MODE
+  cmp #M_TEAMS
+  bne @own
+  txa                              ; seats 1 and 2 against 3 and 4
+  lsr a
+  bra @side
+@own:
+  tya
+@side:
+  sta SHIP_SIDE,y
+  iny
+@next:
+  inx
+  cpx #NUM_SHIPS
+  bne @seat
+  sty N_SHIPS
+  rts
+
+; ItemOk - carry set if list item A can be picked now.
+ItemOk:
+  cmp #IT_MODE
+  beq @yes
+  cmp #IT_MUSIC
+  beq @yes
+  sta T0
+  ldx MODE
+  cpx #M_LINK
+  bne @notLink
+  cmp #2                           ; linked, you only pick your own ship
+  beq @yes
+  bra @no
+@notLink:
+  and #1
+  bne @yes                         ; who flies a seat can always change
+  lda T0
+  lsr a
+  dec a
+  tax
+  lda CFG_KIND,x                   ; a seat that's off has no ship to pick
+  cmp #KIND_OFF
+  bne @yes
+@no:
+  clc
+  rts
+@yes:
+  sec
+  rts
+
+; SelStep - on to the next item that can be picked, in direction A (1 or -1).
+SelStep:
+  sta T1
+@step:
+  lda SEL
+  clc
+  adc T1
+  bpl @low
+  lda #IT_MUSIC
+@low:
+  cmp #IT_MUSIC + 1
+  bcc @set
+  lda #IT_MODE
+@set:
+  sta SEL
+  jsr ItemOk
+  bcc @step
+  rts
+
+; ChangeItem - the picked item goes one way, A = 1 or -1.
+ChangeItem:
+  sta T1
+  lda SEL
+  bne @notMode
+  lda MODE
+  clc
+  adc T1
+  bpl @modeLow
+  lda #M_LINK
+@modeLow:
+  cmp #M_LINK + 1
+  bcc @mode
+  lda #0
+@mode:
+  sta MODE
+  cmp #M_TEAMS
+  bne @modeSet
+  ldx #NUM_SHIPS - 1               ; teams want full sides: empty seats become CPUs
+@fill:
+  lda CFG_KIND,x
+  cmp #KIND_OFF
+  bne @filled
+  lda #KIND_CPU
+  sta CFG_KIND,x
+@filled:
+  dex
+  bpl @fill
+@modeSet:
+  rts
+@notMode:
+  cmp #IT_MUSIC
+  bne @seat
+  jmp ToggleMusic
+@seat:
+  dec a
+  lsr a
+  tax                              ; the seat
+  bcc @who                         ; items 1, 3.. are who flies it
+  lda CFG_FAC,x
+  clc
+  adc T1
+  and #3
+  sta CFG_FAC,x
+  rts
+@who:
+  lda CFG_KIND,x
+  clc
+  adc T1
+  and #3
+  sta CFG_KIND,x
+  rts
 
 EnterTitle:
   lda #ST_TITLE
@@ -394,6 +642,7 @@ EnterTitle:
   lda #TUNE_MENU
   jsr PlayMusic
   jsr LinkOff
+  jsr SetMode
   jsr ResetSpecials
   jsr ClearLayer1
   lda #INK_CYAN
@@ -421,124 +670,215 @@ EnterTitle:
   jsr DrawScores
   ; falls through
 
-; DrawSeats - both seats' lines, and their ships where they'll start.
+; DrawSeats - the whole setup list, and the ships where they'll start.
 DrawSeats:
+  jsr SetMode
   jsr SetColors
-  stz PLAYER
-  jsr DrawSeat
-  inc PLAYER
-  jsr DrawSeat
-  stz PLAYER
-  jsr DrawOpponent
+  jsr DrawMode
+  stz MN_I
+@row:
+  jsr DrawSeatRow
+  inc MN_I
+  lda MN_I
+  cmp #NUM_SHIPS
+  bne @row
   jsr DrawMusicRow
   jsr DrawTip
-  ldx #0
-@ship:
-  lda SpawnHead,x
-  sta SHIP_HEAD,x
-  lda SpawnC,x
-  sta SHIP_C,x
-  lda SpawnR,x
-  sta SHIP_R,x
-  lda #1
-  sta SHIP_ALIVE,x
-  inx
-  cpx #NUM_SHIPS
-  bne @ship
+  jsr PlaceShips
   jsr HideMarkers
   jsr ShowShipsOnHexes
   jmp UploadSprites
 
-; DrawSeat - "PLAYER 1", then "<VANGUARD>" with arrows on the seat being set.
-DrawSeat:
-  ldx PLAYER
-  jsr ShipRow
-  sta RR
-  jsr PrintPlayer
-  jsr LineStart
-  lda PLAYER
+; PlaceShips - every seat in play on its starting hex, facing the middle.
+PlaceShips:
+  ldx #0
+@seat:
+  stz SHIP_ALIVE,x
+  cpx N_SHIPS
+  bcs @next
+  lda #1
+  sta SHIP_ALIVE,x
+  stx T0
+  ldy MODE
+  cpy #M_TEAMS
+  bne @count
+  lda SHIP_SEAT,x                  ; teams start along their own edges
+  clc
+  adc #8
+  bra @spot
+@count:
+  lda N_SHIPS
+  sec
+  sbc #2
+  bcs @layout
+  lda #0
+@layout:
+  asl a
+  asl a
+  clc
+  adc T0
+@spot:
+  tay
+  lda SpawnC,y
+  sta SHIP_C,x
+  lda SpawnR,y
+  sta SHIP_R,x
+  jsr ShipCenter
+  lda #114                         ; the board's middle hex
+  sec
+  sbc HX
+  sta HDX
+  lda #0
+  sbc #0
+  sta HDX+1
+  lda #120
+  sec
+  sbc HY
+  sta HDY
+  lda #0
+  sbc #0
+  sta HDY+1
+  phx
+  jsr HeadingOf
+  plx
+  cmp #$FF
+  beq @next
+  sta SHIP_HEAD,x
+@next:
+  inx
+  cpx #NUM_SHIPS
+  bne @seat
+  rts
+
+; Marked - a list item's marker: '>' if item A is picked, otherwise a space.
+Marked:
   cmp SEL
   bne @plain
-  lda #'<'
-  bra @first
+  lda #'>'
+  rts
 @plain:
   lda #' '
-@first:
-  jsr LineChar
-  lda PLAYER
-  beq @name
-  jsr IsLink                       ; the other seat is the other machine's
-  bne @name
-  ldx #<TxtLinked
-  ldy #>TxtLinked
-  jsr LineStart
-  jsr LineStr
-  bra @show
-@name:
-  ldx PLAYER
-  jsr AddShipName
-  lda PLAYER
-  cmp SEL
-  bne @show
-  lda #'>'
-  jsr LineChar
-@show:
-  lda RR
-  inc a
-  jmp LineShow
+  rts
 
-; DrawOpponent - who plays the second ship.
-DrawOpponent:
-  lda #INK_GRAY
-  sta TXT_INK
-  lda #ROW_OPP
-  ldx #<TxtOpponent
-  ldy #>TxtOpponent
-  jsr Print
+; DrawMode - the kind of battle.
+DrawMode:
   lda #INK_WHITE
   sta TXT_INK
   jsr LineStart
-  lda SEL
-  cmp #2
-  bne @plain
-  lda #'<'
-  bra @first
-@plain:
-  lda #' '
-@first:
+  lda #IT_MODE
+  jsr Marked
   jsr LineChar
-  lda OPP
+  lda MODE
   asl a
-  tax
-  lda OppNames+1,x
   tay
-  lda OppNames,x
+  lda ModeNames+1,y
+  pha
+  lda ModeNames,y
   tax
+  ply
   jsr LineStr
-  lda SEL
-  cmp #2
-  bne @show
-  lda #'>'
-  jsr LineChar
-@show:
-  lda #ROW_OPP + 1
+  lda #ROW_MODE
   jmp LineShow
 
-; DrawMusicRow - the title's music setting.
+; DrawSeatRow - seat MN_I: its number or team, who flies it, its ship.
+DrawSeatRow:
+  ldx MN_I
+  lda #INK_GRAY
+  ldy SEAT_SHIP,x
+  bmi @ink
+  lda SHIP_INK,y
+@ink:
+  sta TXT_INK
+  jsr LineStart
+  ldx MN_I
+  lda MODE
+  cmp #M_TEAMS
+  bne @number
+  txa
+  lsr a
+  clc
+  adc #PAT_ALPHA
+  bra @first
+@number:
+  txa
+  clc
+  adc #'1'
+@first:
+  jsr LineChar
+  lda MN_I
+  asl a
+  inc a
+  jsr Marked
+  jsr LineChar
+  ldx MN_I
+  lda MODE
+  cmp #M_LINK
+  bne @who
+  ldy #12                          ; YOU
+  cpx #0
+  beq @name
+  ldy #15                          ; LNK
+  cpx #1
+  beq @name
+  ldy #9                           ; OFF
+  bra @name
+@who:
+  lda CFG_KIND,x
+  sta T0
+  asl a
+  adc T0
+  tay
+@name:
+  ldx #3
+@letter:
+  lda WhoNames,y
+  phx
+  jsr LineChar
+  plx
+  iny
+  dex
+  bne @letter
+  lda MN_I
+  asl a
+  clc
+  adc #2
+  jsr Marked
+  jsr LineChar
+  ldx MN_I
+  lda SEAT_SHIP,x
+  bmi @show                        ; no ship in a seat that's off
+  lda MODE
+  cmp #M_LINK
+  bne @ship
+  cpx #1
+  beq @show                        ; the other machine picks that one
+@ship:
+  lda CFG_FAC,x
+  asl a
+  asl a
+  tay
+  ldx #4
+@short:
+  lda ShortNames,y
+  phx
+  jsr LineChar
+  plx
+  iny
+  dex
+  bne @short
+@show:
+  lda MN_I
+  clc
+  adc #ROW_SEATS
+  jmp LineShow
+
+; DrawMusicRow - the music setting.
 DrawMusicRow:
   lda #INK_GRAY
   sta TXT_INK
   jsr LineStart
-  lda SEL
-  cmp #3
-  bne @plain
-  lda #INK_WHITE
-  sta TXT_INK
-  lda #'<'
-  bra @first
-@plain:
-  lda #' '
-@first:
+  lda #IT_MUSIC
+  jsr Marked
   jsr LineChar
   ldx #<TxtMusicOn
   ldy #>TxtMusicOn
@@ -548,12 +888,6 @@ DrawMusicRow:
   ldy #>TxtMusicOff
 @text:
   jsr LineStr
-  lda SEL
-  cmp #3
-  bne @show
-  lda #'>'
-  jsr LineChar
-@show:
   lda #ROW_MUSIC
   jmp LineShow
 
@@ -568,125 +902,80 @@ TitleFrame:
   cmp #DIR_DOWN
   beq @down
   cmp #DIR_LEFT
-  beq @prev
+  beq @left
   cmp #DIR_RIGHT
-  beq @next
+  beq @right
   lda EV_FIRE
   bne @fire
   rts
 @fire:
-  jsr SndCommit
   jsr IsLink
   beq @link
+  jsr SidesLeft                    ; a battle needs two sides
+  cmp #2
+  bcs @go
+  jmp SndError
+@go:
+  jsr SndCommit
   jmp StartBattle
 @link:
+  jsr SndCommit
   jmp EnterLink
 @up:
-  lda SEL
-  bne @upOne
-  lda #4
-@upOne:
-  dec a
-  sta SEL
-  cmp #1
-  bne @redraw
-  jsr IsLink                       ; the other machine sets the second seat
-  bne @redraw
-  stz SEL
+  lda #$FF
+  jsr SelStep
   bra @redraw
 @down:
-  lda SEL
-  inc a
-  cmp #4
-  bne @downOne
-  lda #0
-@downOne:
-  sta SEL
-  cmp #1
-  bne @redraw
-  jsr IsLink
-  bne @redraw
-  lda #2
-  sta SEL
+  lda #1
+  jsr SelStep
   bra @redraw
-@prev:
-  lda SEL
-  cmp #3
-  beq @music
-  cmp #2
-  beq @oppPrev
-  ldx SEL
-  lda SHIP_FACTION,x
-  dec a
-  and #3
-  sta SHIP_FACTION,x
+@left:
+  lda #$FF
+  jsr ChangeItem
   bra @redraw
-@music:
-  jsr ToggleMusic
-  bra @redraw
-@oppPrev:
-  lda OPP
-  bne @oppBack
-  lda #4
-@oppBack:
-  dec a
-  sta OPP
-  bra @redraw
-@next:
-  lda SEL
-  cmp #3
-  beq @music
-  cmp #2
-  beq @oppNext
-  ldx SEL
-  lda SHIP_FACTION,x
-  inc a
-  and #3
-  sta SHIP_FACTION,x
-  bra @redraw
-@oppNext:
-  lda OPP
-  inc a
-  cmp #4
-  bne @oppSet
-  lda #0
-@oppSet:
-  sta OPP
+@right:
+  lda #1
+  jsr ChangeItem
 @redraw:
   jsr SndBack
   jmp DrawSeats
-@done:
-  rts
 
-; =============================================================================
+; ====================================================================
 ;   A battle
-; =============================================================================
+; ====================================================================
 
 StartBattle:
   lda #1
   sta TURN
   lda #TUNE_BATTLE
   jsr PlayMusic
+  jsr SetMode
   jsr SetColors
   jsr ResetSpecials
-  ldx #0
+  jsr PlaceShips
+  stz HUMANS
+  ldx #NUM_SHIPS - 1
 @ship:
-  lda #1
-  sta SHIP_ALIVE,x
+  stz PLAN_WEAPON,x
+  stz SHIP_HP_LO,x
+  stz SHIP_HP_HI,x
+  lda #$FF
+  sta PREV_C,x
+  stz STAYED,x
+  lda SHIP_ALIVE,x
+  beq @next
   ldy SHIP_FACTION,x
   lda MaxHull,y
   sta SHIP_HP_HI,x
-  stz SHIP_HP_LO,x
-  lda SpawnC,x
-  sta SHIP_C,x
-  lda SpawnR,x
-  sta SHIP_R,x
-  lda SpawnHead,x
-  sta SHIP_HEAD,x
-  stz PLAN_WEAPON,x
-  inx
-  cpx #NUM_SHIPS
-  bne @ship
+  lda SEAT_KIND,x
+  bne @next
+  inc HUMANS
+  stx HUMAN_SEAT
+@next:
+  dex
+  bpl @ship
+  lda #AI_IDLE
+  sta AI_PHASE
   jsr ClearLayer1
   jsr DrawTurnLine
   ldx #0
@@ -694,16 +983,15 @@ StartBattle:
   jsr DrawNameLine
   jsr DrawHpLine
   inx
-  cpx #NUM_SHIPS
+  cpx N_SHIPS
   bne @panel
   jsr HideMarkers
   jsr ShowBoard
   jsr UploadSprites
-  lda #$FF
-  sta AI_LC                        ; the CPU hasn't seen the enemy yet
   ; falls through
 
-; BeginTurn - against the CPU you plan straight away while it thinks.
+; BeginTurn - the CPUs start thinking, and the first person plans. Against only
+; CPUs there's no handoff, and with no people the turn just plays.
 BeginTurn:
   jsr IsLink
   bne @here
@@ -712,11 +1000,82 @@ BeginTurn:
   sta PLAYER
   jmp EnterPlan
 @here:
+  jsr NoteStayed
+  jsr AiBegin
   stz PLAYER
-  jsr VsCpu
-  bcc EnterHandoff
-  jsr AiStart
+  jsr NextHuman
+  bcs @person
+  jmp CpusThenPlay
+@person:
+  jsr LiveHumans
+  cmp #2
+  bcs EnterHandoff
   jmp EnterPlan
+
+; NoteStayed - which ships ended last turn where they began it.
+NoteStayed:
+  ldx #NUM_SHIPS - 1
+@ship:
+  stz STAYED,x
+  lda SHIP_C,x
+  cmp PREV_C,x
+  bne @moved
+  lda SHIP_R,x
+  cmp PREV_R,x
+  bne @moved
+  inc STAYED,x
+@moved:
+  lda SHIP_C,x
+  sta PREV_C,x
+  lda SHIP_R,x
+  sta PREV_R,x
+  dex
+  bpl @ship
+  rts
+
+; NextHuman - PLAYER moves to the next person still flying, from itself on.
+; Carry clear if there's nobody left to plan.
+NextHuman:
+  ldx PLAYER
+@seat:
+  cpx N_SHIPS
+  bcs @none
+  lda SHIP_ALIVE,x
+  beq @next
+  lda SEAT_KIND,x
+  beq @found
+@next:
+  inx
+  bra @seat
+@found:
+  stx PLAYER
+  sec
+  rts
+@none:
+  clc
+  rts
+
+; LiveHumans - A = people still flying.
+LiveHumans:
+  stz T0
+  ldx N_SHIPS
+@seat:
+  dex
+  bmi @done
+  lda SHIP_ALIVE,x
+  beq @seat
+  lda SEAT_KIND,x
+  bne @seat
+  inc T0
+  bra @seat
+@done:
+  lda T0
+  rts
+
+; CpusThenPlay - everyone human has planned: finish the CPUs' thinking and go.
+CpusThenPlay:
+  jsr AiFinish
+  jmp PlayTurn
 
 ; --- Handoff: the machine goes to the next person to plan ---
 
@@ -739,6 +1098,7 @@ EnterHandoff:
   jmp Print
 
 HandoffFrame:
+  jsr AiWork
   lda EV_FIRE
   beq @wait
   jsr SndPick
@@ -824,10 +1184,9 @@ PhaseCanvas:
 ; DrawRange - an outline round every hex within RANGE of the ship, along the
 ; board's own lines.
 DrawRange:
-  lda PLAYER
-  inc a
-  sta PINK
   jsr CanvasBegin
+  ldx PLAYER
+  jsr SetPen
   jsr ShipToHex
   stz RR
 @row:
@@ -1254,8 +1613,6 @@ PlanFrame:
   beq @input
   jmp LinkBroken
 @local:
-  jsr VsCpu
-  bcc @input
   jsr AiWork
 @input:
   lda EV_SWAP
@@ -1378,19 +1735,20 @@ PlanPick:
 @confirm:
   jsr SndCommit
   jsr IsLink
-  bne @notLinked
+  bne @here
   jmp EnterLinkWait
-@notLinked:
-  jsr VsCpu
-  bcc @nextPerson
-  jsr AiFinish
-  jmp PlayTurn
-@nextPerson:
+@here:
   inc PLAYER
-  lda PLAYER
-  cmp #NUM_SHIPS
-  bcs EnterReady
+  jsr NextHuman
+  bcc @allIn
   jmp EnterHandoff
+@allIn:
+  jsr LiveHumans
+  cmp #2
+  bcc @alone
+  jmp EnterReady
+@alone:
+  jmp CpusThenPlay
 
 ; --- Every plan is in: someone presses fire to watch the turn ---
 
@@ -1415,42 +1773,58 @@ EnterReady:
   jmp Print
 
 ReadyFrame:
+  jsr AiWork
   lda EV_FIRE
-  bne PlayTurn
+  beq @wait
+  jmp CpusThenPlay
+@wait:
+  rts
+
+; ReplayViewer - whose hidden things show while a turn plays: the people's side,
+; if they're all on one.
+ReplayViewer:
+  jsr IsLink
+  bne @local
+  lda MY_SEAT
+  sta VIEWER
+  rts
+@local:
+  lda #VIEW_NONE
+  sta VIEWER
+  ldx #0
+@seat:
+  cpx N_SHIPS
+  bcs @done
+  lda SEAT_KIND,x
+  bne @next
+  lda VIEWER
+  cmp #VIEW_NONE
+  bne @other
+  stx VIEWER
+  bra @next
+@other:
+  tay
+  lda SHIP_SIDE,y
+  cmp SHIP_SIDE,x
+  beq @next
+  lda #VIEW_NONE                   ; people on different sides see nothing hidden
+  sta VIEWER
+  rts
+@next:
+  inx
+  bra @seat
+@done:
   rts
 
 ; PlayTurn - every plan is in: play it, then the next turn or the end.
 PlayTurn:
-  lda #VIEW_NONE                   ; a lone player still sees their own things
-  sta VIEWER
-  jsr VsCpu
-  bcc @people
-  stz VIEWER
-  bra @view
-@people:
-  jsr IsLink                       ; each machine shows its own side
-  bne @view
-  lda MY_SEAT
-  sta VIEWER
-@view:
+  jsr ReplayViewer
   jsr HideMarkers
+  jsr HideFriends
   jsr UploadSprites
   jsr ClearMessages
   jsr RunTurn
-  stz ANY                          ; who's left?
-  lda #$FF
-  sta WINNER
-  ldx #0
-@count:
-  lda SHIP_ALIVE,x
-  beq @gone
-  inc ANY
-  stx WINNER
-@gone:
-  inx
-  cpx #NUM_SHIPS
-  bne @count
-  lda ANY
+  jsr SidesLeft
   cmp #2
   bcs @more
   jmp EnterOver
@@ -1459,7 +1833,130 @@ PlayTurn:
   jsr DrawTurnLine
   jmp BeginTurn
 
+; SidesLeft - A = sides with a ship still flying; WINNER is one of those ships, or
+; $FF if there are none.
+SidesLeft:
+  stz ANY
+  stz T0                           ; which sides, as bits
+  lda #$FF
+  sta WINNER
+  ldx N_SHIPS
+@seat:
+  dex
+  bmi @done
+  lda SHIP_ALIVE,x
+  beq @seat
+  stx WINNER
+  ldy SHIP_SIDE,x
+  lda SideBit,y
+  bit T0
+  bne @seat
+  ora T0
+  sta T0
+  inc ANY
+  bra @seat
+@done:
+  lda ANY
+  rts
+
+SideBit:
+  .byte 1, 2, 4, 8
+
 ; --- The end ---
+
+; WinText - the line to show for who won: X (low), Y (high), A its size.
+WinText:
+  ldy WINNER
+  lda SHIP_SIDE,y
+  sta T1
+  jsr IsLink
+  bne @local
+  lda T1
+  cmp MY_SEAT
+  beq @you
+  bra @lose
+@local:
+  lda HUMANS
+  beq @cpus
+  ; are the people all on one side?
+  stz T2
+  ldx N_SHIPS
+@seat:
+  dex
+  bmi @oneSide
+  lda SEAT_KIND,x
+  bne @seat
+  lda SHIP_SIDE,x
+  ora #$80
+  sta T0
+  lda T2
+  beq @first
+  cmp T0
+  bne @split
+  bra @seat
+@first:
+  lda T0
+  sta T2
+  bra @seat
+@split:
+  lda MODE
+  cmp #M_TEAMS
+  beq @team
+  ldy WINNER                       ; several players apart: name the winner
+  lda SEAT_KIND,y
+  bne @cpuWon
+  jmp @named
+@oneSide:
+  lda T2
+  and #$7F
+  cmp T1
+  beq @you
+@cpuWon:
+  ldx #<TxtCpuWins
+  ldy #>TxtCpuWins
+  lda #3
+  rts
+@you:
+  ldx #<TxtYouWin
+  ldy #>TxtYouWin
+  lda #3
+  rts
+@lose:
+  ldx #<TxtYouLose
+  ldy #>TxtYouLose
+  lda #3
+  rts
+@cpus:
+  lda MODE
+  cmp #M_TEAMS
+  bne @cpuWon
+@team:
+  ldx #<TxtAlphaWins
+  ldy #>TxtAlphaWins
+  lda T1
+  beq @teamText
+  ldx #<TxtOmegaWins
+  ldy #>TxtOmegaWins
+@teamText:
+  lda #2
+  rts
+@named:
+  jsr LineStart
+  ldx #<TxtPlayer
+  ldy #>TxtPlayer
+  jsr LineStr
+  ldx WINNER
+  lda SHIP_SEAT,x
+  clc
+  adc #'1'
+  jsr LineChar
+  ldx #<TxtWins
+  ldy #>TxtWins
+  jsr LineStr
+  ldx #<LINEBUF
+  ldy #>LINEBUF
+  lda #2
+  rts
 
 EnterOver:
   lda #ST_OVER
@@ -1467,61 +1964,16 @@ EnterOver:
   lda #VIEW_ALL                    ; nothing left to hide
   sta VIEWER
   jsr ShowBoard
+  jsr HideFriends
   jsr UploadSprites
   jsr SoundOff
   lda WINNER
   cmp #$FF
   beq @draw
-  sta PLAYER
   tax
   lda SHIP_INK,x
   sta TXT_INK
-  jsr VsCpu
-  bcc @people
-  lda #3
-  ldx PLAYER
-  bne @cpuWon
-  ldx #<TxtYouWin
-  ldy #>TxtYouWin
-  jsr BigText
-  bra @messages
-@cpuWon:
-  ldx #<TxtCpuWins
-  ldy #>TxtCpuWins
-  lda #3
-  jsr BigText
-  bra @messages
-@people:
-  jsr IsLink
-  bne @named
-  lda WINNER
-  cmp MY_SEAT
-  bne @lost
-  ldx #<TxtYouWin
-  ldy #>TxtYouWin
-  bra @linkText
-@lost:
-  ldx #<TxtYouLose
-  ldy #>TxtYouLose
-@linkText:
-  lda #3
-  jsr BigText
-  bra @messages
-@named:
-  jsr LineStart
-  ldx #<TxtPlayer
-  ldy #>TxtPlayer
-  jsr LineStr
-  lda PLAYER
-  clc
-  adc #'1'
-  jsr LineChar
-  ldx #<TxtWins
-  ldy #>TxtWins
-  jsr LineStr
-  lda #2
-  ldx #<LINEBUF
-  ldy #>LINEBUF
+  jsr WinText
   jsr BigText
   bra @messages
 @draw:

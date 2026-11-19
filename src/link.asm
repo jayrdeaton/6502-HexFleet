@@ -59,8 +59,8 @@ TxtYouLose:    .asciiz "YOU LOSE"
 
 ; IsLink - Z set in a linked game.
 IsLink:
-  lda OPP
-  cmp #OPP_LINK
+  lda MODE
+  cmp #M_LINK
   rts
 
 ; --- Starting and stopping ---
@@ -80,10 +80,10 @@ LinkOn:
   stz PEER_ACK
   lda #1
   sta LINK_ON
-  lda SHIP_FACTION
+  lda CFG_FAC
   sta MY_FACTION
   sta TITLE_F
-  lda SHIP_FACTION+1
+  lda CFG_FAC+1
   sta TITLE_F+1
   rts
 
@@ -94,9 +94,9 @@ LinkOff:
   stz LINK_ON
   jsr SerialQuiet
   lda TITLE_F
-  sta SHIP_FACTION
+  sta CFG_FAC
   lda TITLE_F+1
-  sta SHIP_FACTION+1
+  sta CFG_FAC+1
 @done:
   rts
 
@@ -221,12 +221,12 @@ LinkGo:
 @seat:
   stx MY_SEAT
   lda MY_FACTION
-  sta SHIP_FACTION,x
+  sta CFG_FAC,x
   txa
   eor #1
   tax
   lda PEER_FACTION
-  sta SHIP_FACTION,x
+  sta CFG_FAC,x
   jsr SendHello
   jmp StartBattle
 
@@ -443,7 +443,8 @@ SendAck:
 StateSum:
   lda #0
   clc
-  ldx #NUM_SHIPS - 1
+  ldx N_SHIPS
+  dex
 @ship:
   adc SHIP_HP_LO,x
   adc SHIP_HP_HI,x

@@ -2,8 +2,9 @@ HexFleet
 ========
 
 HexFleet for the [AC6502 ACE](https://github.com/acwright/6502-ACE): the hex
-fleet battle from the HexFleet app, as a cartridge for one player against the CPU,
-two players on one machine, or two machines linked over their serial ports. Everyone plans in secret, then every ship moves and
+fleet battle from the HexFleet app, as a cartridge for up to four ships: people and CPUs
+in any mix on one machine, all against all or in two teams, or two machines linked over
+their serial ports. Everyone plans in secret, then every ship moves and
 fires at once.
 
 It runs on an ACE with a [6502-PICOVDP](https://github.com/acwright/6502-PICOVDP)
@@ -28,8 +29,19 @@ Either joystick, or the keyboard:
 | Pick | A | Space or Enter |
 | Swap Laser, Torpedo and your special | B | X |
 
-On the title screen, up and down choose a line, and left and right change it: each
-ship's faction, and the opponent (Normal CPU, Easy CPU, 2 Players or Link).
+On the title screen, up and down move through the list and left and right change what's
+picked:
+
+- **Battle:** Free 4 All, Teams (seats 1 and 2 against 3 and 4) or Link. Switching to
+  Teams turns any empty seats into CPUs.
+- **Each of the four seats:** who flies it (PLR a person, CPU, EZY an easy CPU, or OFF) and
+  its ship. It starts as you against three CPUs. Set seats to OFF for a smaller battle.
+- **Music:** on or off.
+
+Fire starts the battle, once there are at least two sides. People take turns planning,
+passing the controls between them. Against only CPUs you plan straight away. In a team
+battle your teammates are marked while you plan, you see each other's mines and cloaks,
+and friendly fire is on: a CPU teammate tries not to hit you, but you can still hit it.
 
 On your turn, pick a hex up to 3 away (your own hex holds position), pick a target,
 then press fire again to lock in. Picking your destination again also swaps, for
@@ -60,9 +72,9 @@ Beat the CPU and your score goes on the table if it's in the best five: enter th
 initials with up and down, and it's saved to the Flash Cart, so it's still there when
 you switch off.
 
-A win scores 100, plus your hull left as a percentage, plus 5 for every turn under 20.
-Against the Normal CPU that's multiplied by 5, so the best possible score is 1475 and
-an Easy win never outranks a Normal one. Two-player battles don't score.
+A win scores 100, plus your hull left as a percentage, plus 5 for every turn under 20,
+plus 100 for each enemy ship past the first. If no CPU in the battle was on Easy, that's
+multiplied by 5, so the best possible score is 2475. Only battles with one person score.
 
 In the emulator the table is kept in `HexFleet.sav` beside the cartridge. A rebuilt
 cartridge won't load a save from an older build.
@@ -70,7 +82,7 @@ cartridge won't load a save from an older build.
 ## Playing over a cable
 
 Join two ACEs' serial ports with a null-modem cable (each machine's transmit to the
-other's receive, and ground to ground). Each player sets Opponent to Link, picks a ship
+other's receive, and ground to ground). Each player sets the top line to Link, picks a ship
 and presses fire; the battle starts when both have. Each player plans on their own
 screen and sees only their own mines and cloak. The machines send each other the plans,
 so they stay in step. Damaged bytes are sent again, and if the machines ever disagree
@@ -80,12 +92,13 @@ Both machines need the same build of the cartridge. Linked battles don't score.
 
 ## What's here so far
 
-One player against a Normal or Easy CPU, or two players on one machine or two, with the four factions' hulls,
+Up to four ships, people and Normal or Easy CPUs, all against all or in teams, or two
+people on linked machines, with the four factions' hulls,
 torpedoes and specials, moves, lasers, hits by contact, the end of the battle, a saved
 high score table and two-machine play over the serial port.
 
-The CPU plans from the board as the turn began and never sees your plan, your mines or
-a cloaked ship (only where it was last seen). It thinks a slice at a time while you
+Each CPU plans from the board as the turn began and never sees an enemy's plan, mines or
+cloaked ship (only where it was last seen). They think a slice at a time while you
 plan (`src/ai.asm`, `src/special.asm`), so there's no wait.
 
 ## Building
